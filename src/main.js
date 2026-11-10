@@ -85,6 +85,7 @@ async function boot() {
   G.on('item', () => { });
   G.on('repaired', (id) => { });
   G.on('medic', (g, src) => { sfx('achieve'); ui.toast(src === 'infirmary' ? `🩺 ${g.name} reports for duty at the Infirmary!` : `🩺 New medic earned: ${g.name}!`, 'good', 'heart'); });
+  G.on('medicGems', (n) => ui.toast(`Your infirmary is fully staffed: a medic reward became ${n} gems!`, 'good', 'gem'));
   G.on('healed', (g) => { if (!battle.active) ui.toast(`${g.name} is healed and back to work!`, 'good', 'heart'); });
   G.on('placed', () => { world.terrainDirty = true; });
 

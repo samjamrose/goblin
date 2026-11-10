@@ -825,6 +825,8 @@ export const G = {
   },
   addMedic(src) {
     const s = this.s;
+    // the infirmary has at most 6 beds; extra medic rewards become gems
+    if (s.goblins.filter(g => g.job === 'medic').length >= 6) { s.gems += 25; this.emit('medicGems', 25); return null; }
     const used = new Set(s.goblins.map(g => g.name));
     const name = MEDIC_NAMES.find(n => !used.has(n)) || ('Medic ' + pick(NAME_A));
     const r = src === 'boss' ? 1 : 0;
