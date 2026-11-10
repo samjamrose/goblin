@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1c1424">
+<meta name="description" content="Goblin Capital Tycoon: build a ridiculous goblin empire from a muddy camp to a gold-toothed capital.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Goblin Capital Tycoon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="world"></canvas>
+
+  <header id="hud">
+    <div class="hud-top">
+      <button class="cap-badge" data-act="open-quests" aria-label="Capital level">
+        <span class="lvl" id="h-lvl">1</span>
+        <span class="cap-info">
+          <span class="cap-name" id="h-name">Gobtropolis</span>
+          <span class="cap-rank" id="h-rank">Muck Camp</span>
+          <span class="xpbar"><i id="h-xp"></i></span>
+        </span>
+      </button>
+      <div class="hud-btns">
+        <button class="ibtn" data-act="settings" aria-label="Settings" id="h-gear"></button>
+      </div>
+    </div>
+    <div class="res-row">
+      <div class="res gold"><img data-icon="coin"><span><b id="r-gold">0</b><small id="r-gps">+0/s</small></span></div>
+      <div class="res"><img data-icon="shroom"><b id="r-mush">0</b></div>
+      <div class="res"><img data-icon="ore"><b id="r-ore">0</b></div>
+      <div class="res"><img data-icon="gem"><b id="r-gems">0</b></div>
+      <div class="res" id="r-teeth-wrap" hidden><img data-icon="tooth"><b id="r-teeth">0</b></div>
+    </div>
+    <div id="buffs"></div>
+  </header>
+
+  <div id="story" hidden>
+    <div class="story-in">
+      <img data-icon="scroll" class="story-ic">
+      <div class="story-txt"><span id="st-text"></span><span class="pbar"><i id="st-bar"></i></span></div>
+      <button class="btn small" id="st-btn">Go</button>
+    </div>
+  </div>
+
+  <div id="side"></div>
+
+  <div id="ticker"><span id="ticker-txt">Welcome to the capital, Boss!</span></div>
+
+  <nav id="nav">
+    <button data-tab="build"><img data-icon="hammer"><span>Build</span><i class="badge" id="b-build"></i></button>
+    <button data-tab="goblins"><img data-icon="goblin"><span>Goblins</span><i class="badge" id="b-goblins"></i></button>
+    <button data-tab="explore"><img data-icon="map"><span>Explore</span><i class="badge" id="b-explore"></i></button>
+    <button data-tab="quests"><img data-icon="scroll"><span>Quests</span><i class="badge" id="b-quests"></i></button>
+    <button data-tab="more"><img data-icon="chest"><span>More</span><i class="badge" id="b-more"></i></button>
+  </nav>
+
+  <section id="sheet" aria-hidden="true">
+    <div class="sheet-back" data-act="close-sheet"></div>
+    <div class="sheet-panel">
+      <div class="sheet-grab" data-act="close-sheet"></div>
+      <div class="sheet-head"><h2 id="sheet-title"></h2><button class="ibtn close" data-act="close-sheet" aria-label="Close">✕</button></div>
+      <div class="sheet-tabs" id="sheet-tabs"></div>
+      <div class="sheet-body" id="sheet-body"></div>
+    </div>
+  </section>
+
+  <section id="modal" aria-hidden="true">
+    <div class="modal-back"></div>
+    <div class="modal-box" id="modal-box"></div>
+  </section>
+
+  <section id="battle">
+    <div class="bt-top"><span id="bt-title"></span><button class="btn small ghost" id="bt-flee">Retreat</button></div>
+    <canvas></canvas>
+    <div class="bt-ctrl">
+      <button class="btn bomb" id="bt-bomb"><span>💣 Goblin Bomb</span></button>
+      <button class="btn small" id="bt-speed">×1</button>
+    </div>
+    <div class="bt-result">
+      <div class="bt-res-box">
+        <h2></h2>
+        <div class="bt-body"></div>
+        <div class="row"><button class="btn" id="bt-next">Next Stage</button><button class="btn ghost" id="bt-close">Back</button></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="toasts"></div>
+  <div id="flycoins"></div>
+  <div id="loading"><div class="ld-title">Goblin Capital Tycoon</div><div class="ld-sub">Herding goblins...</div></div>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

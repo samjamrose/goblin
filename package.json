@@ -1,0 +1,25 @@
+{
+  "name": "goblin-capital-tycoon",
+  "version": "1.0.0",
+  "description": "Goblin Capital Tycoon - a pixel-art fantasy idle tycoon game",
+  "scripts": {
+    "build": "node build.mjs",
+    "sim": "node tests/sim.mjs",
+    "test": "node tests/e2e.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/samjamrose/goblin.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/samjamrose/goblin/issues"
+  },
+  "homepage": "https://github.com/samjamrose/goblin#readme",
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "type": "module"
+}
