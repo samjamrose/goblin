@@ -41,7 +41,7 @@ async function boot() {
   G.on('achievement', a => { sfx('achieve'); ui.toast(`🏆 ${a.name} (+${a.gems} gems)`, 'ach', 'trophy'); });
   G.on('district', () => { world.terrainDirty = true; });
   G.on('pop', (b) => {
-    const d = BUILDING_BY_ID[b.bid];
+    const d = G.pos(b.bid);
     const [sx, sy] = world.toScreen((d.tx + d.w / 2) * TILE, d.ty * TILE - 16);
     ui.flyCoins(sx, sy, 5);
   });
@@ -60,6 +60,7 @@ async function boot() {
   G.on('invasion', (inv) => { sfx('alarm'); ui.toast(`⚔️ ${inv.name} are invading! 45s until they arrive!`, 'bad', 'castle'); haptic([50, 50, 50]); });
   G.on('invasionResult', (r) => {
     if (battle.active) return;
+    if (r.injured && r.injured.length) setTimeout(() => ui.toast(`🩹 ${r.injured.length} defender(s) went to the Infirmary.`, 'bad', 'heart'), 1500);
     if (r.won) { sfx('victory'); ui.toast('🛡️ Your defenders repelled the invaders! ' + r.got.join(', '), 'good', 'shield'); }
     else { sfx('defeat'); ui.toast(`The invaders stole ${fmt(r.lost)} gold${r.damaged ? ' and wrecked the ' + BUILDING_BY_ID[r.damaged].name : ''}!`, 'bad', 'castle'); }
   });
@@ -70,6 +71,9 @@ async function boot() {
   G.on('newDay', () => { if (G.s.tut.intro) ui.toast('A new day! Fresh daily quests & login reward.', 'good', 'scroll'); });
   G.on('item', () => { });
   G.on('repaired', (id) => { });
+  G.on('medic', (g, src) => { sfx('achieve'); ui.toast(src === 'infirmary' ? `🩺 ${g.name} reports for duty at the Infirmary!` : `🩺 New medic earned: ${g.name}!`, 'good', 'heart'); });
+  G.on('healed', (g) => { if (!battle.active) ui.toast(`${g.name} is healed and back to work!`, 'good', 'heart'); });
+  G.on('placed', () => { world.terrainDirty = true; });
 
   // ---------------- first launch intro / offline
   G.slowTick();
@@ -94,7 +98,7 @@ async function boot() {
       ui.closeModal();
       sfx('levelup');
       ui.toast('Tap the Mushroom Patch to grow your empire!', 'info', 'shroom');
-      const b = BUILDING_BY_ID.shroom;
+      const b = G.pos('shroom');
       world.pointer = { x: (b.tx + b.w / 2) * TILE, y: b.ty * TILE - 12 };
       setTimeout(() => { world.pointer = null; }, 9000);
     };
@@ -116,7 +120,7 @@ async function boot() {
     G.tick(dt);
     acc1 += dt; accSave += dt; accUi += dt;
     if (acc1 >= 1) { acc1 = 0; G.slowTick(); ui.badges(); ui.flushQueue(); }
-    if (accSave >= 15) { accSave = 0; G.save(); }
+    if (accSave >= 5) { accSave = 0; G.save(); }
     if (battle.active) { battle.update(dt); battle.render(); }
     else { world.update(dt); world.render(); }
     ui.hud();

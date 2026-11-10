@@ -5,6 +5,7 @@ import {
   REGIONS, REGION_BY_ID, STAGES_PER_REGION, MISSIONS, TREASURES, TREASURE_SETS, RESEARCH, RESEARCH_BY_ID,
   PERKS, PERK_BY_ID, PRESTIGE_MIN_GOLD, teethFor, ITEM_WEAPONS, ITEM_TRINKETS, ITEM_ADJ, ITEM_OF, FUNNY_EVENTS,
   AMBIENT_EVENTS, DAILY_TEMPLATES, STORY, ACHIEVEMENTS, RIVAL_NAMES, LOGIN_REWARDS, ENEMIES,
+  MAP_W, MAP_H, ROADS, DECOR, DECOR_SIZE, HEAL_MS, MEDIC_NAMES,
 } from './data.js';
 import { rng, pick, ri, clamp, weighted, dayKey, weekKey, hashStr, fmt, shuffle } from './util.js';
 import { enemyTeam, resolveInstant } from './battlesim.js';
@@ -44,7 +45,7 @@ export const G = {
       timers: { golden: now + 90e3, event: now + 150e3, invasion: now + 600e3, disaster: now + 300e3, bubble: now + 5e3, ambient: now + 20e3 },
       merchant: null, pity: { basic: 0, premium: 0 },
       settings: { sound: true, music: true, haptics: true },
-      tut: {}, forgeCount: 0, invasionsSeen: 0,
+      tut: {}, forgeCount: 0, invasionsSeen: 0, place: {}, firstMedic: false, medicsEarned: 0, mig2: true,
     };
     for (const b of BUILDINGS) s.buildings[b.id] = { lvl: b.startBuilt ? 1 : 0, built: 0 };
     this.s = s;
@@ -71,6 +72,7 @@ export const G = {
   },
 
   migrate(s) {
+    const needsMig2 = !s.mig2;
     const fresh = this.newState();
     // deep-ish merge defaults for new fields
     for (const k in fresh) if (s[k] === undefined) s[k] = fresh[k];
@@ -78,6 +80,14 @@ export const G = {
     for (const k in fresh.timers) if (s.timers[k] === undefined) s.timers[k] = fresh.timers[k];
     for (const b of BUILDINGS) if (!s.buildings[b.id]) s.buildings[b.id] = { lvl: b.startBuilt ? 1 : 0, built: 0 };
     for (const k in fresh.settings) if (s.settings[k] === undefined) s.settings[k] = fresh.settings[k];
+    if (needsMig2) {
+      // v2 update: a story quest (Build the Infirmary) was inserted at index 13
+      const idx = STORY.findIndex(q => q.goal.build === 'infirmary');
+      if (s.story >= idx) s.story++;
+      s.mig2 = true;
+    }
+    if (!s.place) s.place = {};
+    this.placeVer = (this.placeVer || 0) + 1;
     return s;
   },
 
@@ -134,7 +144,59 @@ export const G = {
     return m;
   },
   districtOpen(id) { return !!this.s.districts[id]; },
-  canBuildHere(id) { return this.districtOpen(this.def(id).district) && this.s.level >= this.def(id).unlock; },
+  canBuildHere(id) { return this.s.level >= this.def(id).unlock; },
+  // ---- free placement: buildings can go anywhere on open land
+  pos(id) {
+    if (this._posVer !== this.placeVer || this._posFor !== this.s) {
+      this._pos = {}; this._posVer = this.placeVer; this._posFor = this.s;
+      for (const b of BUILDINGS) { const p = this.s.place && this.s.place[b.id]; this._pos[b.id] = p ? { ...b, tx: p.tx, ty: p.ty, placed: true } : b; }
+      this._posAll = BUILDINGS.map(b => this._pos[b.id]);
+    }
+    return this._pos[id];
+  },
+  posAll() { this.pos('shroom'); return this._posAll; },
+  districtAtTile(tx, ty) { return DISTRICTS.find(d => tx >= d.x && tx < d.x + d.w && ty >= d.y && ty < d.y + d.h) || null; },
+  tileOpen(tx, ty) { const d = this.districtAtTile(tx, ty); return !d || !!this.s.districts[d.id]; },
+  roadSet() {
+    if (this._roads) return this._roads;
+    const r = new Set();
+    for (const [x1, y1, x2, y2] of ROADS) for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) r.add(y * MAP_W + x);
+    return (this._roads = r);
+  },
+  // is the footprint of building `id` at (tx,ty) free? `ignore` = building being moved
+  canPlace(id, tx, ty) {
+    const d = this.def(id), roads = this.roadSet();
+    if (tx < 0 || ty < 3 || tx + d.w > MAP_W || ty + d.h + 1 > MAP_H) return false;
+    const blocked = (x, y, door) => {
+      if (!door && roads.has(y * MAP_W + x)) return true;
+      if (y === 35 || y === 36) return true; // river
+      if (!this.tileOpen(x, y)) return true;
+      for (const b of this.posAll()) if (b.id !== id && (this.s.buildings[b.id].lvl > 0 || !b.placed && false) && x >= b.tx && x < b.tx + b.w && y >= b.ty && y < b.ty + b.h) return true;
+      for (const dc of DECOR) { const [w, h] = DECOR_SIZE[dc.type]; if (x >= dc.tx && x < dc.tx + w && y >= dc.ty && y < dc.ty + h) return true; }
+      return false;
+    };
+    for (let y = ty; y < ty + d.h; y++) for (let x = tx; x < tx + d.w; x++) if (blocked(x, y, false)) return false;
+    // the door tile in front must stay reachable
+    if (blocked(tx + Math.floor(d.w / 2), ty + d.h, true)) return false;
+    return true;
+  },
+  // nearest free spot to the building's suggested area
+  findSpot(id, nearX, nearY) {
+    const d = this.def(id);
+    const sx = nearX ?? d.tx, sy = nearY ?? d.ty;
+    if (this.canPlace(id, sx, sy)) return { tx: sx, ty: sy };
+    for (let r = 1; r < 40; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      if (this.canPlace(id, sx + dx, sy + dy)) return { tx: sx + dx, ty: sy + dy };
+    }
+    return null;
+  },
+  setPlace(id, tx, ty) { this.s.place[id] = { tx, ty }; this.placeVer = (this.placeVer || 0) + 1; this.emit('placed', id); },
+  moveBuilding(id, tx, ty) {
+    if (!this.isBuilt(id) || !this.canPlace(id, tx, ty)) return false;
+    this.setPlace(id, tx, ty);
+    return true;
+  },
 
   researchSum(key) {
     let t = 0;
@@ -179,6 +241,7 @@ export const G = {
     m *= 1 + this.setBonus('gold');
     m *= 1 + this.regionBonus('gold');
     m *= 1 + 0.01 * Object.keys(s.achievements).length;
+    m *= 1 + 0.1 * (Object.keys(s.districts).length - 1); // each extra district: +10%
     m *= this.buffMult('gold');
     return m;
   },
@@ -197,6 +260,7 @@ export const G = {
   workerSlots(id) {
     const l = this.s.buildings[id].lvl;
     const d = this.def(id);
+    if (id === 'infirmary') return l <= 0 ? 0 : l;
     if (d.kind === 'util') return 0;
     return l <= 0 ? 0 : 1 + (l >= 25 ? 1 : 0) + (l >= 50 ? 1 : 0) + (l >= 100 ? 1 : 0);
   },
@@ -295,18 +359,20 @@ export const G = {
     return d.upCost * Math.pow(d.growth, l - 1);
   },
 
-  buy(id, n = 1) {
+  buy(id, n = 1, place) {
     const d = this.def(id), b = this.s.buildings[id];
     if (!this.canBuildHere(id)) return false;
+    if (b.lvl === 0 && place && !this.canPlace(id, place.tx, place.ty)) return false;
     if (d.kind === 'util') {
       if (d.maxLvl && b.lvl >= d.maxLvl) return false;
       const c = this.utilCost(id);
       if (!this.spend('gold', c)) return false;
       const first = b.lvl === 0;
+      if (first && place) this.setPlace(id, place.tx, place.ty);
       b.lvl++;
       this.s.stats.upgrades++;
       this.addXp(3 + Math.pow(c, 0.42));
-      if (first) { b.built = this.now() + 3000; this.emit('build', id); } else this.emit('upgrade', id, 1);
+      if (first) { b.built = this.now() + 3000; this.emit('build', id); if (id === 'infirmary') this.giveFirstMedic(); } else this.emit('upgrade', id, 1);
       return true;
     }
     if (n === 'max') n = this.maxAffordable(id);
@@ -314,6 +380,7 @@ export const G = {
     const c = this.bizCost(id, n);
     if (!this.spend('gold', c)) return false;
     const before = b.lvl;
+    if (before === 0 && place) this.setPlace(id, place.tx, place.ty);
     b.lvl += n;
     this.s.stats.upgrades += n;
     const idx = BIZ.indexOf(d);
@@ -396,7 +463,7 @@ export const G = {
     }
     const seed = Math.floor(Math.random() * 1e9);
     const R = rng(seed);
-    const job = opts.job || pick(Object.keys(JOBS), R);
+    const job = opts.job || pick(Object.keys(JOBS).filter(j => j !== 'medic'), R);
     const name = opts.name || (pick(NAME_A, R) + pick(NAME_B, R) + (R() < 0.35 ? ' ' + pick(NAME_C, R) : '')).trim();
     const trait = opts.trait || pick(Object.keys(TRAITS), R);
     let hat = opts.hat || pick(HATS, R);
@@ -427,7 +494,7 @@ export const G = {
     return r;
   },
 
-  housed() { return this.s.goblins.filter(g => !g.named).length; },
+  housed() { return this.s.goblins.filter(g => !g.named && g.job !== 'medic').length; },
   canRecruit() { return this.housed() < this.housing(); },
 
   recruit(mode = 'basic') {
@@ -522,7 +589,7 @@ export const G = {
   },
   dismiss(uid) {
     const g = this.gob(uid);
-    if (!g || g.assign && g.assign.t === 'exp') return false;
+    if (!g || g.assign && (g.assign.t === 'exp' || g.assign.t === 'med')) return false;
     this.unequipAll(g);
     const refund = Math.floor(this.recruitCost() * 0.25 + this.trainCost(g) * 0.5);
     this.s.mushrooms += refund;
@@ -535,7 +602,8 @@ export const G = {
     // target: {t:'b', id} | {t:'def'} | null
     const g = this.gob(uid);
     if (!g) return false;
-    if (g.assign && g.assign.t === 'exp') return false;
+    if (g.assign && (g.assign.t === 'exp' || g.assign.t === 'med')) return false;
+    if (target && target.t === 'def' && g.job === 'medic') return false;
     if (target && target.t === 'b') {
       if (this.workers(target.id).length >= this.workerSlots(target.id)) return false;
     }
@@ -548,7 +616,7 @@ export const G = {
   },
   autoAssign(id) {
     const d = this.def(id);
-    const free = this.s.goblins.filter(g => !g.assign);
+    const free = this.s.goblins.filter(g => !g.assign && (id === 'infirmary' ? g.job === 'medic' : g.job !== 'medic'));
     free.sort((a, b) => this.workerBonus(b, d) - this.workerBonus(a, d));
     let n = 0;
     while (this.workers(id).length < this.workerSlots(id) && free.length) { this.assign(free.shift().uid, { t: 'b', id }); n++; }
@@ -633,12 +701,13 @@ export const G = {
     const r = REGION_BY_ID[regionId];
     return enemyTeam(r, stage);
   },
+  canFight(g) { return g && g.job !== 'medic' && !(g.assign && (g.assign.t === 'exp' || g.assign.t === 'med')); },
   battleTeam() {
     // up to 4 strongest non-expedition goblins (party chosen by player overrides)
     const s = this.s;
-    let party = (s.party || []).map(u => this.gob(u)).filter(g => g && !(g.assign && g.assign.t === 'exp'));
+    let party = (s.party || []).map(u => this.gob(u)).filter(g => g && this.canFight(g));
     if (!party.length) {
-      party = s.goblins.filter(g => !(g.assign && g.assign.t === 'exp')).sort((a, b) => this.goblinPower(b) - this.goblinPower(a)).slice(0, 4);
+      party = s.goblins.filter(g => this.canFight(g)).sort((a, b) => this.goblinPower(b) - this.goblinPower(a)).slice(0, 4);
     }
     return party.slice(0, 4);
   },
@@ -655,16 +724,17 @@ export const G = {
     else if (first && stage % 3 === 0) rw.gems = 5 + ri * 2;
     return rw;
   },
-  finishBattle(regionId, stage, won, pokes = 0) {
+  finishBattle(regionId, stage, won, pokes = 0, injured = []) {
     const s = this.s;
     s.stats.pokes += pokes;
-    if (!won) { s.stats.battlesLost++; return null; }
+    const hurt = this.injure(injured);
+    if (!won) { s.stats.battlesLost++; return { lost: true, injured: hurt }; }
     s.stats.battlesWon++;
     const reg = s.regions[regionId] = s.regions[regionId] || { stage: 0 };
     const first = stage > reg.stage;
     const rw = this.battleReward(regionId, stage, first);
     const got = this.grant(rw);
-    const res = { reward: rw, got, first };
+    const res = { reward: rw, got, first, injured: hurt };
     if (first) reg.stage = stage;
     const boss = stage >= STAGES_PER_REGION;
     if (boss && first) {
@@ -672,6 +742,7 @@ export const G = {
       const R = REGION_BY_ID[regionId];
       res.conquered = R.reward.text;
       this.emit('conquer', R);
+      res.medic = this.addMedic('boss');
     }
     const ri = REGIONS.findIndex(r => r.id === regionId);
     if (Math.random() < (boss ? 1 : 0.15)) {
@@ -685,6 +756,75 @@ export const G = {
     }
     return res;
   },
+
+  // ------------------------------------------------------------- Injuries & medics
+  // goblins (uids) who fell in battle; returns the list actually injured
+  casualties(b) { return b.units.filter(u => u.side === 'g' && !u.alive && u.gob).map(u => u.gob); },
+  injure(uids) {
+    const out = [];
+    for (const u of uids) {
+      const g = this.gob(u);
+      if (!g || (g.assign && (g.assign.t === 'med' || g.assign.t === 'exp'))) continue;
+      g.prev = g.assign && (g.assign.t === 'b' || g.assign.t === 'def') ? g.assign : null;
+      g.assign = { t: 'med' };
+      g.inj = { at: this.now() + out.length, start: 0, end: 0 };
+      out.push(g);
+    }
+    if (out.length) { this.s.party = (this.s.party || []).filter(u => !out.find(g => g.uid === u)); this.processHealing(this.now()); this.emit('injured', out); }
+    return out;
+  },
+  injured() { return this.s.goblins.filter(g => g.assign && g.assign.t === 'med'); },
+  medics() { return this.workers('infirmary').filter(g => g.job === 'medic'); },
+  healSlots() { return this.isBuilt('infirmary') && !this.isConstructing('infirmary') ? this.medics().length : 0; },
+  healGoblin(g) {
+    g.inj = null;
+    const p = g.prev; g.prev = null; g.assign = null;
+    if (p && this.validAssign(p)) g.assign = p;
+    this.emit('healed', g);
+  },
+  processHealing(now) {
+    const cap = this.healSlots();
+    for (let guard = 0; guard < 1000; guard++) {
+      const list = this.injured();
+      const active = list.filter(g => g.inj && g.inj.end);
+      const done = active.filter(g => g.inj.end <= now).sort((a, b) => a.inj.end - b.inj.end);
+      if (done.length) { const t = done[0].inj.end; this.healGoblin(done[0]); this.startHeal(t, cap); continue; }
+      if (active.length < cap && this.startHeal(now, cap)) continue;
+      break;
+    }
+  },
+  startHeal(t, cap) {
+    const list = this.injured();
+    if (list.filter(g => g.inj && g.inj.end).length >= cap) return false;
+    const q = list.filter(g => g.inj && !g.inj.end).sort((a, b) => a.inj.at - b.inj.at);
+    if (!q.length) return false;
+    const g = q[0];
+    g.inj.start = Math.max(t, g.inj.at); g.inj.end = g.inj.start + HEAL_MS;
+    return true;
+  },
+  healRushCost(g) { return g.inj && g.inj.end ? Math.max(1, Math.ceil((g.inj.end - this.now()) / 60000) * 2) : 6; },
+  rushHeal(uid) {
+    const g = this.gob(uid); if (!g || !g.inj) return false;
+    if (!this.spend('gems', this.healRushCost(g))) return false;
+    this.healGoblin(g); this.processHealing(this.now());
+    return true;
+  },
+  addMedic(src) {
+    const s = this.s;
+    const used = new Set(s.goblins.map(g => g.name));
+    const name = MEDIC_NAMES.find(n => !used.has(n)) || ('Medic ' + pick(NAME_A));
+    const r = src === 'boss' ? 1 : 0;
+    const g = this.makeGoblin(r, { job: 'medic', name, hat: 'nurse', trait: pick(['optimist', 'genius', 'paranoid', 'loud']) });
+    g.look.tool = 'medkit';
+    g.named = null; g.medic = true;
+    s.goblins.push(g);
+    s.medicsEarned++;
+    if (this.isBuilt('infirmary')) this.assign(g.uid, { t: 'b', id: 'infirmary' });
+    this.processHealing(this.now());
+    this.emit('medic', g, src);
+    return g;
+  },
+  giveFirstMedic() { if (this.s.firstMedic) return; this.s.firstMedic = true; this.addMedic('infirmary'); },
 
   // ------------------------------------------------------------- Expeditions
   expSlots() { return this.s.buildings.lodge.lvl + this.perk('party'); },
@@ -717,7 +857,7 @@ export const G = {
     const s = this.s;
     if (this.activeExpeditions().length >= this.expSlots()) return false;
     if (!uids.length || uids.length > 3) return false;
-    for (const u of uids) { const g = this.gob(u); if (!g || (g.assign && g.assign.t === 'exp')) return false; }
+    for (const u of uids) { const g = this.gob(u); if (!this.canFight(g)) return false; }
     const now = this.now();
     const e = {
       id: s.nextUid++, region: regionId, mission: missionId, party: uids.slice(),
@@ -762,6 +902,7 @@ export const G = {
       const r = weighted([[0, 50], [1, 35], [2, 11 + M.loot / 2], [3, 3 + M.loot / 4], [4, 0.4 + M.loot / 20]]);
       res.goblin = this.addRecruit(r, 'expedition');
     }
+    if (ok && M.loot >= 9 && Math.random() < (M.loot >= 20 ? 0.25 : 0.12)) res.medic = this.addMedic('expedition');
     res.log = this.expLog(e, ok);
     // return goblins
     for (const u of e.party) { const g = this.gob(u); if (g) { g.assign = g.prev && this.validAssign(g.prev) ? g.prev : null; g.prev = null; } }
@@ -817,16 +958,17 @@ export const G = {
     this.emit('invasion', this.rt.invasion);
     return this.rt.invasion;
   },
-  resolveInvasion(won) {
+  resolveInvasion(won, injured = []) {
     const s = this.s;
+    const hurt = this.injure(injured);
     const inc = this.incomePerSec(false);
     this.rt.invasion = null;
     if (won) {
       s.stats.invasionsWon++;
       const rw = { gold: Math.max(200, inc * 120), ore: Math.floor(10 + s.level * 4), xp: this.xpFrac(0.08) };
       const got = this.grant(rw);
-      this.emit('invasionResult', { won, got });
-      return { won, got };
+      this.emit('invasionResult', { won, got, injured: hurt });
+      return { won, got, injured: hurt };
     }
     s.stats.invasionsLost++;
     const lost = Math.min(s.gold * 0.1, inc * 300);
@@ -834,14 +976,14 @@ export const G = {
     const built = BIZ.filter(b => this.isBuilt(b.id) && !s.damaged[b.id]);
     let dmg = null;
     if (built.length) { dmg = pick(built).id; s.damaged[dmg] = this.now() + 300e3; }
-    this.emit('invasionResult', { won, lost, damaged: dmg });
-    return { won, lost, damaged: dmg };
+    this.emit('invasionResult', { won, lost, damaged: dmg, injured: hurt });
+    return { won, lost, damaged: dmg, injured: hurt };
   },
   autoDefend() {
     const team = this.defenders().map(g => this.goblinCombat(g, true));
     if (!team.length) return this.resolveInvasion(false);
     const b = resolveInstant(team, this.rt.invasion.enemies);
-    return this.resolveInvasion(b.winner === 'g');
+    return this.resolveInvasion(b.winner === 'g', this.casualties(b));
   },
 
   // ------------------------------------------------------------- Prestige
@@ -861,14 +1003,22 @@ export const G = {
     s.gold = 10 + hs; s.mushrooms = Math.max(50, s.mushrooms * 0.1); s.ore = Math.min(s.ore, 100);
     s.runGold = 0; s.xp = 0; s.level = 1;
     for (const b of BUILDINGS) {
-      if (b.id === 'huts' || b.id === 'cauldron') continue;
+      if (b.id === 'huts' || b.id === 'cauldron' || b.id === 'infirmary') continue;
       s.buildings[b.id] = { lvl: b.startBuilt ? 1 : 0, built: 0 };
+      delete s.place[b.id];
     }
     s.districts = { muck: true };
+    for (const id of ['huts', 'cauldron', 'infirmary']) {
+      const p = s.place[id]; if (!p) continue;
+      const d = this.def(id); let ok = true;
+      for (let y = p.ty; y <= p.ty + d.h; y++) for (let x = p.tx; x < p.tx + d.w; x++) if (!this.tileOpen(x, y)) ok = false;
+      if (!ok) delete s.place[id];
+    }
+    this.placeVer = (this.placeVer || 0) + 1;
     s.research = {};
     s.damaged = {};
     s.buffs = [];
-    for (const g of s.goblins) { if (g.assign && g.assign.t !== 'exp') g.assign = null; g.prev = null; }
+    for (const g of s.goblins) { if (g.assign && g.assign.t === 'med') { g.prev = null; continue; } if (g.assign && g.assign.t !== 'exp') g.assign = null; g.prev = null; if (g.job === 'medic' && this.isBuilt('infirmary')) this.assign(g.uid, { t: 'b', id: 'infirmary' }); }
     this.rt.bubbles = []; this.rt.fires = []; this.rt.rats = []; this.rt.invasion = null;
     if (this.merchantOpen()) this.refreshMerchant(true); else s.merchant = null;
     this.emit('prestige', gain);
@@ -1333,6 +1483,7 @@ export const G = {
     }
     if (this.rt.invasion && !this.rt.invasion.fighting && now > this.rt.invasion.until) this.autoDefend();
 
+    if (this.injured().length) this.processHealing(now);
     // expeditions done notification
     for (const e of s.expeditions) if (!e.claimed && !e.notified && now >= e.end) { e.notified = true; this.emit('expDone', e); }
 

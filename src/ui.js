@@ -11,7 +11,7 @@ import { sfx, setSfx, setMusic, unlockAudio } from './audio.js';
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const RES_ICON = { gold: 'coin', mushrooms: 'shroom', ore: 'ore', gems: 'gem', teeth: 'tooth' };
-const JOB_ICON = { miner: 'pick', farmer: 'shroom', brewer: 'mug', smith: 'hammer', alchemist: 'potion', merchant: 'bag', gambler: 'dice', thief: 'dagger', warrior: 'sword', builder: 'hammer', scout: 'map' };
+const JOB_ICON = { miner: 'pick', farmer: 'shroom', brewer: 'mug', smith: 'hammer', alchemist: 'potion', merchant: 'bag', gambler: 'dice', thief: 'dagger', warrior: 'sword', builder: 'hammer', scout: 'map', medic: 'heart' };
 
 const thumbCache = {};
 function bThumb(id, tier) {
@@ -162,10 +162,10 @@ export class UI {
   }
   bizCard(b) {
     const G = this.G, st = G.s.buildings[b.id];
-    const open = G.districtOpen(b.district), lvlOk = G.s.level >= b.unlock;
-    if (!open || !lvlOk) {
+    const lvlOk = G.s.level >= b.unlock;
+    if (!lvlOk) {
       return `<div class="card lock row"><div class="thumb"><img src="${bThumb(b.id, 0)}" style="filter:brightness(.3)"></div><div class="grow"><div class="bname">${b.name}</div>
-        <div class="bsub">${!lvlOk ? `🔒 Requires Capital Level ${b.unlock}` : `🔒 Unlock the ${DISTRICT_BY_ID[b.district].name} district`}</div></div></div>`;
+        <div class="bsub">🔒 Requires Capital Level ${b.unlock}</div></div></div>`;
     }
     const nm = G.nextMilestone(st.lvl);
     const prevM = [0, ...MILESTONES].filter(m => m <= st.lvl).pop() || 0;
@@ -192,8 +192,8 @@ export class UI {
   }
   utilCard(b) {
     const G = this.G, st = G.s.buildings[b.id];
-    const open = G.districtOpen(b.district), lvlOk = G.s.level >= b.unlock;
-    if (!open || !lvlOk) return `<div class="card lock row"><div class="thumb"><img src="${bThumb(b.id, 0)}" style="filter:brightness(.3)"></div><div class="grow"><div class="bname">${b.name}</div><div class="bsub">${!lvlOk ? `🔒 Requires Capital Level ${b.unlock}` : `🔒 Unlock ${DISTRICT_BY_ID[b.district].name}`}</div></div></div>`;
+    const lvlOk = G.s.level >= b.unlock;
+    if (!lvlOk) return `<div class="card lock row"><div class="thumb"><img src="${bThumb(b.id, 0)}" style="filter:brightness(.3)"></div><div class="grow"><div class="bname">${b.name}</div><div class="bsub">🔒 Requires Capital Level ${b.unlock}</div></div></div>`;
     const max = b.maxLvl && st.lvl >= b.maxLvl;
     return `<div class="card row" data-act="open-building" data-id="${b.id}">
       <div class="thumb"><img src="${bThumb(b.id, G.tier(b.id))}"></div>
@@ -209,6 +209,7 @@ export class UI {
       case 'lodge': return l ? `${G.expSlots()} expedition slot(s), +${(l - 1) * 10}% loot` : 'Unlocks Expeditions';
       case 'research': return l ? `${Object.keys(G.s.research).length}/${RESEARCH.length} researched` : 'Unlocks Research';
       case 'barracks': return l ? `${G.defenderSlots()} defender slots · +${l * 15}% defense` : 'Defend against invasions';
+      case 'infirmary': return l ? `${G.medics().length} medic(s) on duty · ${G.injured().length} patient(s)` : 'Heals goblins injured in battle';
       case 'tower': return l ? `+${l * 10}% defense HP · +${l * 5}% golden goblins` : 'Spot invaders, attract gold';
     }
     return '';
@@ -231,7 +232,7 @@ export class UI {
   }
   pDistricts() {
     const G = this.G;
-    let h = `<p class="small muted center">Expand your capital! New districts hold new buildings.</p>`;
+    let h = `<p class="small muted center">Expand your capital! Each district clears the fog, opens new land to build on, and adds +10% to all income.</p>`;
     for (const d of DISTRICTS) {
       const open = G.s.districts[d.id];
       const blds = BUILDINGS.filter(b => b.district === d.id).map(b => b.name).join(', ');
@@ -254,7 +255,7 @@ export class UI {
     if (G.s.damaged[id]) h += `<div class="card" style="background:#5a2a2a"><div class="row"><div class="grow">🔥 <b>Damaged!</b> Income halved. Auto-repairs in ${fmtTime((G.s.damaged[id] - G.now()) / 1000)}.</div><button class="btn small" data-act="repair" data-id="${id}">Repair ${iconImg('coin')}${fmt(G.repairCost(id))}</button></div></div>`;
     if (b.kind === 'biz') {
       if (st.lvl === 0) {
-        if (!G.canBuildHere(id)) h += `<div class="card paper center">🔒 Requires Capital Level ${b.unlock} and the ${DISTRICT_BY_ID[b.district].name}.</div>`;
+        if (!G.canBuildHere(id)) h += `<div class="card paper center">🔒 Requires Capital Level ${b.unlock}.</div>`;
         else h += `<div class="card center"><p>Build it to start earning <b class="gold-t">${fmt(b.income * G.globalMult())}/s</b>!</p><button class="btn gold wide" data-act="buy" data-id="${id}" data-n="1" ${this.b(el => el.classList.toggle('no', G.s.gold < G.bizCost(id, 1)))}>BUILD · ${iconImg('coin')}${fmt(G.bizCost(id, 1))}</button></div>`;
       } else {
         const nm = G.nextMilestone(st.lvl);
@@ -271,6 +272,7 @@ export class UI {
           el.innerHTML = `${n === 'max' ? 'MAX ×' + k : '×' + n}<small>${iconImg('coin')}${fmt(c)}</small>`;
         })}></button>`).join('')}</div>`;
         h += this.workerSlotsHtml(id);
+        h += this.moveBtn(id);
       }
     } else {
       h += this.utilDetail(id);
@@ -294,15 +296,81 @@ export class UI {
   utilDetail(id) {
     const G = this.G, b = BUILDING_BY_ID[id], st = G.s.buildings[id];
     let h = `<div class="card"><div class="bsub">${this.utilEffect(id)}</div></div>`;
-    if (!G.canBuildHere(id)) return h + `<div class="card paper center">🔒 Requires Capital Level ${b.unlock} and the ${DISTRICT_BY_ID[b.district].name}.</div>`;
+    if (!G.canBuildHere(id)) return h + `<div class="card paper center">🔒 Requires Capital Level ${b.unlock}.</div>`;
     if (!(b.maxLvl && st.lvl >= b.maxLvl)) {
       h += `<button class="btn gold wide" data-act="buy" data-id="${id}" ${this.b(el => { const c = G.utilCost(id); el.classList.toggle('no', G.s.gold < c); el.innerHTML = `${st.lvl ? 'UPGRADE to Lv ' + (st.lvl + 1) : 'BUILD'} · ${iconImg('coin')}${fmt(c)}`; })}></button>`;
     }
     if (!st.lvl) return h;
+    h += this.moveBtn(id);
+    if (id === 'infirmary') h += this.infirmaryHtml();
     if (id === 'cauldron') h += `<div style="margin-top:10px"><button class="btn purple wide" data-act="tab" data-tab="goblins" data-sub="recruit">${iconImg('goblin')} Recruit Goblins</button></div>`;
     if (id === 'lodge') h += `<div style="margin-top:10px"><button class="btn blue wide" data-act="tab" data-tab="explore" data-sub="exped">${iconImg('map')} Plan Expeditions</button></div>`;
     if (id === 'research') h += `<div style="margin-top:10px"><button class="btn blue wide" data-act="tab" data-tab="build" data-sub="research">${iconImg('flask')} Open Research</button></div>`;
     if (id === 'barracks' || id === 'tower') h += `<div style="margin-top:10px"><button class="btn red wide" data-act="tab" data-tab="explore" data-sub="defense">${iconImg('shield')} Manage Defense</button></div>`;
+    return h;
+  }
+
+  // ------------------------------------------------------------ placement & infirmary
+  startPlacement(id, mode) {
+    const G = this.G, b = BUILDING_BY_ID[id];
+    this.closeSheet(); this.closeModal();
+    const ok = this.world.startPlacing(id, mode);
+    if (!ok) { this.toast('No free land! Unlock a district for more space.', 'bad'); return; }
+    const bar = $('#placebar');
+    $('#pl-name').textContent = (mode === 'move' ? 'Move ' : 'Place ') + b.name;
+    $('#pl-ok').textContent = mode === 'move' ? 'Move here' : 'Build here';
+    bar.hidden = false;
+    document.getElementById('app').classList.add('placing');
+    const update = () => {
+      const valid = this.world.placeValid();
+      bar.classList.toggle('bad', !valid);
+      $('#pl-hint').textContent = valid ? 'Tap the map to move it. Suggested area is shown first.' : 'Blocked! Keep off roads, water, other buildings and fog.';
+      $('#pl-ok').classList.toggle('no', !valid);
+    };
+    this.world.hooks.onPlaceMove = update;
+    update();
+    const end = () => { bar.hidden = true; document.getElementById('app').classList.remove('placing'); this.world.placing = null; this.world.hooks.onPlaceMove = null; };
+    $('#pl-cancel').onclick = () => { sfx('tap'); end(); };
+    $('#pl-ok').onclick = () => {
+      const p = this.world.placing; if (!p) return end();
+      if (!this.world.placeValid()) { sfx('error'); return; }
+      if (mode === 'move') { if (G.moveBuilding(id, p.tx, p.ty)) { sfx('build'); this.world.puff((p.tx + b.w / 2) * TILE, (p.ty + b.h) * TILE - 4, '#c8a878', 14); this.toast(`${b.name} moved!`, 'good', 'hammer'); } }
+      else if (G.buy(id, 1, { tx: p.tx, ty: p.ty })) { sfx('build'); }
+      else { sfx('error'); this.toast('Not enough gold!', 'bad', 'coin'); return; }
+      end();
+    };
+  }
+  moveBtn(id) { return `<div style="margin-top:10px"><button class="btn small ghost" data-act="move" data-id="${id}">${iconImg('hammer')} Move building</button></div>`; }
+  injuredHtml(list) {
+    if (!list || !list.length) return '';
+    const G = this.G;
+    const note = G.healSlots() ? 'They\'re resting at the Infirmary (2 min each).' : (G.isBuilt('infirmary') ? 'Assign a medic at the Infirmary to heal them!' : 'Build the Goblin Infirmary to heal them!');
+    return `<p class="small red-t">🩹 Injured: <b>${list.map(g => esc(g.name.split(' ')[0])).join(', ')}</b>. ${note}</p>`;
+  }
+  infirmaryHtml() {
+    const G = this.G;
+    const meds = G.medics(), slots = G.workerSlots('infirmary');
+    let h = `<h3>Medics (${meds.length}/${slots} beds)</h3><p class="small muted" style="margin-top:0">Each medic heals one goblin at a time, 2 minutes each. Medics are earned: beat region bosses, or find them on long expeditions.</p><div class="slots">`;
+    const ws = G.workers('infirmary');
+    for (let i = 0; i < 6; i++) {
+      const g = ws[i];
+      if (i >= slots) { h += `<div class="slot" style="opacity:.35">🔒<small>Lv ${i + 1}</small></div>`; continue; }
+      if (g) h += `<div class="slot r-${g.rarity}" data-act="unassign" data-uid="${g.uid}" style="box-shadow:inset 0 0 0 2px var(--rc)"><img src="${goblinPortrait(g.look, 2)}"><span class="x">✕</span><small>${esc(g.name.split(' ').slice(-1)[0])}</small></div>`;
+      else h += `<div class="slot" data-act="assign-med">+<small>Medic</small></div>`;
+    }
+    h += `</div>`;
+    const idleMeds = G.s.goblins.filter(g => g.job === 'medic' && !g.assign).length;
+    if (idleMeds && ws.length < slots) h += `<button class="btn small blue" style="margin-top:8px" data-act="auto-assign" data-id="infirmary">Assign idle medics</button>`;
+    else if (idleMeds) h += `<p class="small">${idleMeds} medic(s) waiting for a bed. Upgrade the Infirmary!</p>`;
+    const inj = G.injured().sort((a, b) => (b.inj?.end ? 1 : 0) - (a.inj?.end ? 1 : 0) || (a.inj?.at || 0) - (b.inj?.at || 0));
+    h += `<h3>Patients (${inj.length})</h3>`;
+    if (!inj.length) h += `<p class="small muted">Nobody's hurt. For now.</p>`;
+    for (const g of inj) {
+      h += `<div class="list-item"><img src="${goblinPortrait(g.look, 2)}" style="width:36px"><div class="grow small"><b>${esc(g.name)}</b><br><span ${this.b(el => {
+        if (!g.inj) { el.textContent = 'Healed!'; return; }
+        el.textContent = g.inj.end ? `Healing... ${fmtTime((g.inj.end - G.now()) / 1000)}` : (G.healSlots() ? 'Waiting for a free medic' : 'Waiting — no medic on duty!');
+      })}></span></div>${g.inj ? `<button class="btn tiny purple" data-act="rush-heal" data-uid="${g.uid}" ${this.b(el => { if (g.inj) el.innerHTML = `Heal now ${iconImg('gem')}${G.healRushCost(g)}`; })}></button>` : ''}</div>`;
+    }
     return h;
   }
 
@@ -329,6 +397,7 @@ export class UI {
     if (g.assign.t === 'b') return `<span class="st work">${BUILDING_BY_ID[g.assign.id].name.split(' ').slice(-1)[0]}</span>`;
     if (g.assign.t === 'def') return '<span class="st work">Defending</span>';
     if (g.assign.t === 'exp') return '<span class="st" style="color:var(--blue)">Exploring</span>';
+    if (g.assign.t === 'med') return `<span class="st" style="color:var(--red)">🩹 ${g.inj && g.inj.end ? 'Healing' : 'Injured'}</span>`;
     return '';
   }
   gcard(g, act = 'goblin', extra = '') {
@@ -349,6 +418,7 @@ export class UI {
     if (g.assign?.t === 'b') assignTxt = 'Working at ' + BUILDING_BY_ID[g.assign.id].name;
     if (g.assign?.t === 'def') assignTxt = 'Defending the capital';
     if (g.assign?.t === 'exp') assignTxt = 'Away on an expedition';
+    if (g.assign?.t === 'med') assignTxt = g.inj && g.inj.end ? `🩹 Healing at the Infirmary (${fmtTime((g.inj.end - G.now()) / 1000)} left)` : '🩹 Injured — waiting for a medic';
     const h = `<div class="r-${g.rarity}">
       <img class="big-por" src="${goblinPortrait(g.look, 6)}" style="width:120px;height:130px">
       <div class="rt">${R.name.toUpperCase()} ${'★'.repeat(g.stars || 0)}</div>
@@ -370,12 +440,12 @@ export class UI {
       </div>
       <h3>Job</h3>
       <div class="row wrap" style="justify-content:center">
-        ${g.assign?.t === 'exp' ? '<span class="muted small">Busy exploring.</span>' : `
+        ${g.assign?.t === 'med' ? `<button class="btn small purple" data-act="rush-heal" data-uid="${uid}">Heal now ${iconImg('gem')}${G.healRushCost(g)}</button>` : g.assign?.t === 'exp' ? '<span class="muted small">Busy exploring.</span>' : `
         <button class="btn small blue" data-act="assign-pick" data-uid="${uid}">Assign to building</button>
-        ${G.isBuilt('barracks') ? `<button class="btn small red" data-act="assign-def" data-uid="${uid}">Defend</button>` : ''}
+        ${G.isBuilt('barracks') && g.job !== 'medic' ? `<button class="btn small red" data-act="assign-def" data-uid="${uid}">Defend</button>` : ''}
         ${g.assign ? `<button class="btn small ghost" data-act="unassign" data-uid="${uid}">Make idle</button>` : ''}`}
       </div>
-      <div class="modal-actions"><button class="btn ghost" data-act="close-modal">Close</button>${g.assign?.t !== 'exp' && G.s.goblins.length > 1 ? `<button class="btn small red" data-act="dismiss" data-uid="${uid}">Dismiss</button>` : ''}</div>
+      <div class="modal-actions"><button class="btn ghost" data-act="close-modal">Close</button>${g.assign?.t !== 'exp' && g.assign?.t !== 'med' && G.s.goblins.length > 1 ? `<button class="btn small red" data-act="dismiss" data-uid="${uid}">Dismiss</button>` : ''}</div>
     </div>`;
     this.modal(h, { dark: true, dismissable: true, keep: 'goblin:' + uid });
   }
@@ -820,16 +890,20 @@ export class UI {
   startBattle(regionId, stage) {
     const G = this.G, R = REGION_BY_ID[regionId];
     const team = G.battleTeam();
-    if (!team.length) { this.toast('No goblins available to fight!', 'bad'); return; }
+    if (!team.length) { this.toast(G.injured().length ? 'Your fighters are healing at the Infirmary!' : 'No goblins available to fight!', 'bad', 'heart'); return; }
     this.closeSheet();
     this.battle.open({
       title: `${R.name} · ${stage >= STAGES_PER_REGION ? 'BOSS' : 'Stage ' + stage}`,
       team: team.map(g => G.goblinCombat(g)), enemies: G.battleSetup(regionId, stage), region: R,
       bombMult: 1 + G.researchSum('bomb'),
-      onEnd: (won, pokes) => {
-        const res = G.finishBattle(regionId, stage, won, pokes);
-        if (!won) return { html: `<p>Your goblins got bonked.</p><p class="small">Tips: train goblins (${iconImg('shroom')}), equip weapons, recruit stronger heroes, and use the Goblin Bomb!</p>` };
-        let html = `<div class="loot">${res.got.map(g => `<span>${g}</span>`).join('')}</div>`;
+      onEnd: (won, pokes, fled, b) => {
+        // losing sends the whole party to the infirmary; otherwise only the fallen
+        const hurt = won || fled ? G.casualties(b) : b.units.filter(u => u.side === 'g' && u.gob).map(u => u.gob);
+        const res = G.finishBattle(regionId, stage, won, pokes, hurt);
+        const inj = this.injuredHtml(res.injured);
+        if (!won) return { html: `<p>Your goblins got bonked.</p>${inj}<p class="small">Tips: train goblins (${iconImg('shroom')}), equip weapons, recruit stronger heroes, and use the Goblin Bomb!</p>` };
+        let html = `<div class="loot">${res.got.map(g => `<span>${g}</span>`).join('')}</div>` + inj;
+        if (res.medic) html += `<p class="green-t">🩺 A grateful medic joined you: <b>${esc(res.medic.name)}</b>!</p>`;
         if (res.conquered) html += `<p class="green-t"><b>👑 REGION CONQUERED!</b><br>${res.conquered}</p>`;
         if (res.item) html += `<p>Loot: <b class="rt r-${res.item.rarity}">${esc(res.item.name)}</b></p>`;
         if (res.treasure) html += `<p>💎 Treasure: <b>${TREASURES[res.treasure].name}</b></p>`;
@@ -851,11 +925,13 @@ export class UI {
       title: '⚔️ Defend the Capital!',
       team: defs.map(g => G.goblinCombat(g, true)), enemies: inv.enemies, region: { sky: ['#ffb070', '#ffe0a0'], ground: '#5fa83e', props: 'fences' },
       bombMult: 1 + G.researchSum('bomb'),
-      onEnd: (won, pokes) => {
+      onEnd: (won, pokes, fled, b) => {
         G.s.stats.pokes += pokes;
-        const r = G.resolveInvasion(won);
-        if (won) return { html: `<p>The invaders flee in shame!</p><div class="loot">${r.got.map(g => `<span>${g}</span>`).join('')}</div>` };
-        return { html: `<p>The invaders looted <b>${fmt(r.lost)}</b> gold${r.damaged ? ` and damaged the ${BUILDING_BY_ID[r.damaged].name}` : ''}.</p>` };
+        const hurt = won || fled ? G.casualties(b) : b.units.filter(u => u.side === 'g' && u.gob).map(u => u.gob);
+        const r = G.resolveInvasion(won, hurt);
+        const inj = this.injuredHtml(r.injured);
+        if (won) return { html: `<p>The invaders flee in shame!</p><div class="loot">${r.got.map(g => `<span>${g}</span>`).join('')}</div>${inj}` };
+        return { html: `<p>The invaders looted <b>${fmt(r.lost)}</b> gold${r.damaged ? ` and damaged the ${BUILDING_BY_ID[r.damaged].name}` : ''}.</p>${inj}` };
       },
     });
   }
@@ -865,8 +941,8 @@ export class UI {
     unlockAudio();
     if (G.storyProgress(q) >= 1) { this.acts['claim-story'].call(this); return; }
     const g = q.goal;
-    const focusB = (id) => { const b = BUILDING_BY_ID[id]; this.closeSheet(); this.world.focusBuilding(id); this.world.pointer = { x: (b.tx + b.w / 2) * TILE, y: b.ty * TILE - 12 }; setTimeout(() => { this.world.pointer = null; }, 6000); };
-    if (g.build) { if (G.canBuildHere(g.build)) focusB(g.build); else if (!G.districtOpen(BUILDING_BY_ID[g.build].district)) this.openTab('build', 'districts'); else this.openTab('build', BUILDING_BY_ID[g.build].kind === 'biz' ? 'biz' : 'util'); }
+    const focusB = (id) => { const b = G.pos(id); this.closeSheet(); this.world.focusBuilding(id); this.world.pointer = { x: (b.tx + b.w / 2) * TILE, y: b.ty * TILE - 12 }; setTimeout(() => { this.world.pointer = null; }, 6000); };
+    if (g.build) { if (G.canBuildHere(g.build) && this.world.shown(BUILDING_BY_ID[g.build])) focusB(g.build); else { this.openTab('build', BUILDING_BY_ID[g.build].kind === 'biz' ? 'biz' : 'util'); this.show({ tab: 'building', param: g.build }, true); } }
     else if (g.blvl) { this.openTab('build', 'biz'); }
     else if (g.stat && g.stat[0] === 'recruits') this.openTab('goblins', 'recruit');
     else if (g.assigned) this.openTab('goblins', 'roster');
@@ -952,6 +1028,8 @@ export class UI {
     const ready = s.expeditions.filter(e => !e.claimed && now >= e.end).length;
     if (ready) want.push({ k: 'exp', cls: 'gold', act: 'tab', ic: 'chest', t: `${ready} back!`, data: { tab: 'explore', sub: 'exped' } });
     if (G.rt.fires.length) want.push({ k: 'fire', cls: 'alert', act: 'goto-fire', ic: 'fire', t: 'FIRE! Tap it!' });
+    const hurt = G.injured().length;
+    if (hurt) want.push({ k: 'heal', cls: '', act: 'open-infirmary', ic: 'heart', t: `${hurt} healing` });
     if (G.rt.rats.length) want.push({ k: 'rats', cls: '', act: 'noop', ic: 'rat', t: `Rats! Squash ${G.rt.rats.length}` });
     const side = $('#side');
     const keys = new Set(want.map(w => w.k));
@@ -987,6 +1065,7 @@ UI.prototype.acts = {
   'back'() { this.back(); },
   'close-modal'() { this.closeModal(); },
   'noop'() { },
+  'open-infirmary'() { this.openTab('build', 'util'); if (this.G.isBuilt('infirmary')) this.show({ tab: 'building', param: 'infirmary' }, true); },
   'sub'(el) { this.show({ tab: el.dataset.tab, sub: el.dataset.sub }); this.stack = []; },
   'tab'(el) { this.closeModal(); this.openTab(el.dataset.tab, el.dataset.sub); },
   'settings'() { this.openTab('more', 'settings'); },
@@ -998,6 +1077,13 @@ UI.prototype.acts = {
     let n = el.dataset.n === 'max' ? 'max' : +(el.dataset.n || 1);
     if (BUILDING_BY_ID[id].kind === 'util') n = 1;
     const wasBuilt = G.isBuilt(id);
+    if (!wasBuilt) {
+      if (!G.canBuildHere(id)) { sfx('error'); return; }
+      const c = BUILDING_BY_ID[id].kind === 'util' ? G.utilCost(id) : G.bizCost(id, 1);
+      if (G.s.gold < c) { sfx('error'); this.toast('Not enough gold yet!', 'bad', 'coin'); return; }
+      this.startPlacement(id, 'new');
+      return;
+    }
     if (G.buy(id, n)) {
       sfx(wasBuilt ? 'buy' : 'build');
       const r = el.getBoundingClientRect();
@@ -1024,10 +1110,21 @@ UI.prototype.acts = {
   'assign-slot'(el) {
     const G = this.G, id = el.dataset.id, b = BUILDING_BY_ID[id];
     this.pickGoblins({
-      title: `Assign to ${b.name}`, filter: g => !(g.assign && (g.assign.t === 'exp' || (g.assign.t === 'b' && g.assign.id === id))),
+      title: `Assign to ${b.name}`, filter: g => !(g.assign && (g.assign.t === 'exp' || g.assign.t === 'med' || (g.assign.t === 'b' && g.assign.id === id))) && g.job !== 'medic',
       sortBy: (x, y) => G.workerBonus(y, b) - G.workerBonus(x, b) || (!!x.assign - !!y.assign),
       onDone: ([uid]) => { G.assign(uid, { t: 'b', id }); sfx('gob'); this.rerender(); },
     });
+  },
+  'move'(el) { this.startPlacement(el.dataset.id, 'move'); },
+  'assign-med'() {
+    const G = this.G;
+    this.pickGoblins({ title: 'Assign a medic', filter: g => g.job === 'medic' && !(g.assign && g.assign.t === 'b' && g.assign.id === 'infirmary') && !(g.assign && g.assign.t === 'med'),
+      onDone: ([uid]) => { G.assign(uid, { t: 'b', id: 'infirmary' }); G.processHealing(G.now()); sfx('gob'); this.rerender(); } });
+  },
+  'rush-heal'(el) {
+    const G = this.G, uid = +el.dataset.uid;
+    if (G.rushHeal(uid)) { sfx('golden'); this.toast(`${esc(G.gob(uid).name)} is good as new!`, 'good', 'heart'); if (this.modalKeep) this.goblinModal(uid); this.rerender(); }
+    else { sfx('error'); this.toast('Not enough gems!', 'bad', 'gem'); }
   },
   'auto-assign'(el) { const n = this.G.autoAssign(el.dataset.id); if (n) sfx('gob'); this.rerender(); },
   'auto-all'() {
@@ -1068,7 +1165,7 @@ UI.prototype.acts = {
   },
   'def-slot'() {
     const G = this.G;
-    this.pickGoblins({ title: 'Choose a defender', filter: g => !(g.assign && (g.assign.t === 'exp' || g.assign.t === 'def')), onDone: ([uid]) => { G.assign(uid, { t: 'def' }); sfx('gob'); this.rerender(); } });
+    this.pickGoblins({ title: 'Choose a defender', filter: g => G.canFight(g) && !(g.assign && g.assign.t === 'def'), onDone: ([uid]) => { G.assign(uid, { t: 'def' }); sfx('gob'); this.rerender(); } });
   },
   'train'(el) {
     const G = this.G, uid = +el.dataset.uid, n = G.train(uid, +el.dataset.n);
@@ -1113,7 +1210,7 @@ UI.prototype.acts = {
   'party'() {
     const G = this.G;
     this.pickGoblins({
-      title: 'Battle Party', max: 4, filter: g => !(g.assign && g.assign.t === 'exp'), selected: G.battleTeam().map(g => g.uid),
+      title: 'Battle Party', max: 4, filter: g => G.canFight(g), selected: G.battleTeam().map(g => g.uid),
       info: (sel) => `Team power: <b>${fmt(sel.reduce((t, u) => t + G.goblinPower(G.gob(u)), 0))}</b> · Warriors tank, Thieves crit, Alchemists splash, Scouts attack fast.`,
       onDone: (sel) => { G.s.party = sel; this.rerender(); },
     });
@@ -1124,7 +1221,7 @@ UI.prototype.acts = {
   'exp-start'(el) {
     const G = this.G, rid = el.dataset.id, mid = el.dataset.m;
     if (G.activeExpeditions().length >= G.expSlots()) { this.toast('All expedition slots busy! Upgrade the Lodge.', 'bad'); return; }
-    const avail = (g) => !(g.assign && (g.assign.t === 'exp'));
+    const avail = (g) => G.canFight(g);
     const party = new Set(G.battleTeam().map(g => g.uid));
     const suggestion = G.s.goblins.filter(avail).sort((a, b) => (party.has(a.uid) - party.has(b.uid)) || G.goblinPower(b) - G.goblinPower(a)).slice(0, 3).map(g => g.uid);
     this.pickGoblins({

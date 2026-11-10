@@ -34,6 +34,14 @@ const SHOTS = process.env.SHOTS || null;
   await wait(300);
   check(await p.isVisible('#sheet.open'), 'building sheet opens on tap');
   await p.click('.sheet-body .btn.gold');
+  await wait(300);
+  check(await p.isVisible('#placebar'), 'placement mode starts on BUILD');
+  // move the ghost somewhere blocked (a road), then back to a valid spot
+  await ev(() => { const w = window.__game.world; w.placing.tx = 26; w.placing.ty = 20; w.hooks.onPlaceMove(); });
+  check(await ev(() => !window.__game.world.placeValid()), 'road spot is rejected');
+  await ev(() => { const w = window.__game.world, G = window.__game.G; const sp = G.findSpot('shroom', 19, 14); w.placing.tx = sp.tx; w.placing.ty = sp.ty; w.hooks.onPlaceMove(); });
+  check(await ev(() => window.__game.world.placeValid()), 'free spot is accepted');
+  await p.click('#pl-ok');
   await wait(3300);
   check(await ev(() => window.__game.G.isBuilt('shroom') && !window.__game.G.isConstructing('shroom')), 'shroom built');
   // story claim
@@ -48,6 +56,8 @@ const SHOTS = process.env.SHOTS || null;
   for (const a of ['10', '100', 'max', '1']) { await p.click(`.amt button[data-v="${a}"]`); await wait(80); }
   await p.click('[data-act=buy][data-id=shroom]');
   await p.click('[data-act=buy][data-id=mine]');
+  await wait(200);
+  await p.click('#pl-ok');
   await wait(2800);
   check(await ev(() => window.__game.G.s.buildings.mine.lvl) >= 1, 'mine built from list');
   await tab('build');
@@ -183,6 +193,43 @@ const SHOTS = process.env.SHOTS || null;
   await wait(300);
   check(!(await p.isVisible('#battle.show')), 'battle closed');
   await ev(() => window.__game.ui.closeSheet());
+
+  // ---- injuries & infirmary
+  await ev(() => window.__game.ui.closeSheet());
+  const team = await ev(() => window.__game.G.battleTeam().map(g => g.uid));
+  await ev((t) => window.__game.G.finishBattle('woods', 2, false, 0, t), team);
+  check(await ev(() => window.__game.G.injured().length) === team.length, 'lost battle injures the whole party');
+  check(await ev((t) => !window.__game.G.battleTeam().some(g => t.includes(g.uid)), team), 'injured goblins cannot fight');
+  await ev(() => { window.__game.G.s.gold = 1e9; window.__game.ui.openTab('build'); window.__game.ui.show({ tab: 'building', param: 'infirmary' }, true); });
+  await wait(200);
+  await p.click('.sheet-body [data-act=buy]');
+  await wait(300);
+  await p.click('#pl-ok');
+  await wait(3500);
+  check(await ev(() => window.__game.G.isBuilt('infirmary')), 'infirmary built via placement');
+  check(await ev(() => window.__game.G.medics().length) === 1, 'infirmary comes with one medic');
+  check(await ev(() => window.__game.G.injured().filter(g => g.inj.end).length) === 1, 'one goblin heals at a time with one medic');
+  await ev(() => { window.__game.ui.openTab('build'); window.__game.ui.show({ tab: 'building', param: 'infirmary' }, true); });
+  await wait(300);
+  await shot('infirmary');
+  // fast-forward healing: finish the current patient
+  await ev(() => { const G = window.__game.G; const g = G.injured().find(x => x.inj.end); g.inj.end = G.now() - 1; });
+  await wait(300);
+  check(await ev((n) => window.__game.G.injured().length === n - 1, team.length), 'patient healed after timer');
+  await ev(() => { const G = window.__game.G; G.s.gems += 100; for (const g of G.injured()) G.rushHeal(g.uid); });
+  check(await ev(() => window.__game.G.injured().length) === 0, 'rush heal clears patients');
+  // move a building
+  await ev(() => { window.__game.ui.openTab('build'); window.__game.ui.show({ tab: 'building', param: 'tavern' }, true); });
+  await wait(200);
+  await p.click('.sheet-body [data-act=move]');
+  await wait(300);
+  const spot = await ev(() => { const G = window.__game.G, w = window.__game.world; const sp = G.findSpot('tavern', 40, 31); w.placing.tx = sp.tx; w.placing.ty = sp.ty; return sp; });
+  await p.click('#pl-ok');
+  await wait(200);
+  check(await ev(() => window.__game.G.pos('tavern').tx) === spot.tx, 'building moved');
+  await ev(() => { const w = window.__game.world; w.cam.zoom = 1.6; w.focus(36 * 16, 24 * 16, false); });
+  await wait(400);
+  await shot('placed-map');
 
   // ---- party picker
   await tab('explore');
@@ -336,6 +383,24 @@ const SHOTS = process.env.SHOTS || null;
   check(await p.isVisible('#modal.open img'), 'share card rendered');
   await shot('share');
   await closeModals();
+
+  // ---- old save from the previous version loads with progress intact
+  {
+    const fs = require('fs');
+    const old = fs.readFileSync(__dirname + '/fixtures/v1-save.json', 'utf8');
+    const ctx2 = await browser.newContext({ ...devices['iPhone 13'] });
+    await ctx2.addInitScript((save) => { if (!sessionStorage.getItem('seeded')) { localStorage.setItem('goblin_capital_tycoon_v1', save); sessionStorage.setItem('seeded', '1'); } }, old);
+    const q = await ctx2.newPage();
+    q.on('pageerror', e => errs.push('PAGEERR(migrate) ' + e.message));
+    await q.goto(URL);
+    await q.waitForTimeout(1500);
+    const st = await q.evaluate(() => { const s = window.__game.G.s; return { name: s.name, lvl: s.level, gems: s.gems, gob: s.goblins.length, mine: s.buildings.mine.lvl, story: s.story, gold: s.gold, woods: s.regions.woods.stage }; });
+    check(st.name === 'MyOldCapital' && st.lvl === 9 && st.gob === 7 && st.mine === 40 && st.woods === 4, 'old save progress kept ' + JSON.stringify(st));
+    check(st.story === 17, 'story index migrated');
+    check(st.gold >= 123456, 'gold kept (plus offline earnings)');
+    await q.screenshot({ path: (SHOTS || '/tmp') + '/e2e-migrated.png' });
+    await ctx2.close();
+  }
 
   // ---- sustained run: let the world simulate for a while
   await ev(() => window.__game.ui.closeSheet());

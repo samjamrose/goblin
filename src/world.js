@@ -1,10 +1,9 @@
 // The capital map: terrain, buildings, wandering goblins, effects, camera & input.
-import { TILE, MAP_W, MAP_H, BUILDINGS, BUILDING_BY_ID, DISTRICTS, DECOR, ROADS, PERSONALITY_LINES, JOB_LINES, GENERIC_LINES, BIZ } from './data.js';
+import { TILE, MAP_W, MAP_H, BUILDINGS, BUILDING_BY_ID, DISTRICTS, DECOR, DECOR_SIZE, ROADS, PERSONALITY_LINES, JOB_LINES, GENERIC_LINES, BIZ } from './data.js';
 import { goblinSheet, GOB_W, GOB_H, buildingSprite, scaffoldSprite, plotSprite, B_EXTRA, makeCanvas, iconCanvas, shade, enemySprite } from './sprites.js';
 import { rng, pick, clamp, fmt, hashStr } from './util.js';
 
 const WW = MAP_W * TILE, WH = MAP_H * TILE;
-const DECOR_SIZE = { campfire: [2, 2], chiefhut: [3, 3], fountain: [3, 2], statue: [2, 2] };
 const FONT = '"Pixelify Sans", "Trebuchet MS", sans-serif';
 
 export class World {
@@ -45,17 +44,18 @@ export class World {
     for (const [x1, y1, x2, y2] of ROADS) for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) if (g[y] && g[y][x]) g[y][x].road = true;
     for (let x = 0; x < MAP_W; x++) for (const y of [35, 36]) { g[y][x].t = 'water'; g[y][x].solid = true; }
     for (let x = 26; x <= 28; x++) for (const y of [35, 36]) { g[y][x].t = 'bridge'; g[y][x].solid = false; g[y][x].road = true; }
-    for (const b of BUILDINGS) for (let y = b.ty; y < b.ty + b.h; y++) for (let x = b.tx; x < b.tx + b.w; x++) { g[y][x].solid = true; g[y][x].bld = b.id; }
+    // default building plots stay clear of trees (stable scenery)
+    for (const b of BUILDINGS) for (let y = b.ty; y <= b.ty + b.h; y++) for (let x = b.tx; x < b.tx + b.w; x++) if (g[y]?.[x]) g[y][x].res = true;
     for (const d of DECOR) { const [w, h] = DECOR_SIZE[d.type]; for (let y = d.ty; y < d.ty + h; y++) for (let x = d.tx; x < d.tx + w; x++) { g[y][x].solid = true; g[y][x].decor = true; } }
     // trees (static scenery) — placed where nothing else is
     const R = rng(42);
     this.trees = [];
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
       const c = g[y][x];
-      if (c.solid || c.road || c.t !== 'grass') continue;
+      if (c.solid || c.road || c.res || c.t !== 'grass') continue;
       // keep clear near roads and buildings
       let near = false;
-      for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) { const n = g[y + dy]?.[x + dx]; if (n && (n.road || n.bld || n.decor)) near = true; }
+      for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) { const n = g[y + dy]?.[x + dx]; if (n && (n.road || n.res || n.decor)) near = true; }
       if (near) continue;
       const d = this.districtAt(x, y);
       let p = d ? 0.07 : 0.32;
@@ -68,8 +68,54 @@ export class World {
     this.fields = [[3, 31, 8, 3], [36, 31, 10, 3], [13, 39, 9, 3], [40, 39, 8, 3]];
     for (const [fx, fy, fw, fh] of this.fields) for (let y = fy; y < fy + fh; y++) for (let x = fx; x < fx + fw; x++) if (g[y]?.[x] && !g[y][x].road) { g[y][x].t = 'field'; if (g[y][x].tree) { g[y][x].tree = false; g[y][x].solid = false; } }
     this.trees = this.trees.filter(t => g[Math.floor(t.y / TILE)][Math.floor(t.x / TILE)].tree);
+    this.placeVer = -1;
+    this.applyPlacements();
   }
 
+  // mark built buildings as solid at their current (player-chosen) spots; clear trees under them
+  applyPlacements() {
+    const G = this.G, g = this.grid;
+    const key = G.placeVer + ':' + G.posAll().map(b => G.s.buildings[b.id].lvl > 0 ? 1 : 0).join('');
+    if (this.placeVer === key) return;
+    this.placeVer = key;
+    for (const row of g) for (const c of row) if (c.bld) { c.bld = null; if (!c.tree && c.t !== 'water') c.solid = false; }
+    let cleared = false;
+    for (const b of G.posAll()) {
+      if (G.s.buildings[b.id].lvl <= 0) continue;
+      for (let y = b.ty; y <= b.ty + b.h; y++) for (let x = b.tx; x < b.tx + b.w; x++) {
+        const c = g[y]?.[x]; if (!c) continue;
+        if (c.tree) { c.tree = false; c.solid = false; cleared = true; }
+        if (y < b.ty + b.h) { c.solid = true; c.bld = b.id; }
+      }
+    }
+    if (cleared) { this.trees = this.trees.filter(t => g[Math.floor(t.y / TILE)][Math.floor(t.x / TILE)].tree); }
+    this.regKey = null;
+    this.terrainDirty = true;
+  }
+
+  // a building is drawn if built (wherever placed), or as a "suggested plot" at its default spot when that spot is free
+  shown(b) {
+    const G = this.G;
+    if (G.s.buildings[b.id].lvl > 0) return true;
+    return !!(this.plotOk && this.plotOk[b.id]);
+  }
+  refreshPlots() {
+    const G = this.G, key = this.placeVer + '|' + Object.keys(G.s.districts).join(',') + '|' + G.s.level;
+    if (this.plotKey === key) return;
+    this.plotKey = key; this.plotOk = {};
+    for (const b of BUILDINGS) if (G.s.buildings[b.id].lvl <= 0) this.plotOk[b.id] = G.canPlace(b.id, b.tx, b.ty);
+  }
+  // ---- placement mode
+  startPlacing(id, mode, onDone) {
+    const G = this.G, d = G.def(id);
+    const cur = G.pos(id);
+    const near = mode === 'move' ? { tx: cur.tx, ty: cur.ty } : G.findSpot(id, d.tx, d.ty) || G.findSpot(id, 27, 30);
+    if (!near) return false;
+    this.placing = { id, mode, tx: near.tx, ty: near.ty, onDone };
+    this.focus((near.tx + d.w / 2) * TILE, (near.ty + d.h / 2) * TILE);
+    return true;
+  }
+  placeValid() { const p = this.placing; return p && this.G.canPlace(p.id, p.tx, p.ty); }
   walkable(x, y) {
     const c = this.grid[y]?.[x];
     if (!c || c.solid) return false;
@@ -81,7 +127,7 @@ export class World {
   // A* over tiles, roads are cheaper
   // connected walkable regions, recomputed when the set of open districts changes
   regions() {
-    const key = Object.keys(this.G.s.districts).sort().join(',');
+    const key = Object.keys(this.G.s.districts).sort().join(',') + '|' + this.placeVer;
     if (this.regKey === key) return this.reg;
     const reg = new Int32Array(MAP_W * MAP_H).fill(-1);
     let id = 0;
@@ -293,7 +339,7 @@ export class World {
   toScreen(wx, wy) { return [(wx - this.cam.x) * this.cam.zoom + this.sw / 2, (wy - this.cam.y) * this.cam.zoom + this.sh / 2]; }
   toWorld(sx, sy) { return [(sx - this.sw / 2) / this.cam.zoom + this.cam.x, (sy - this.sh / 2) / this.cam.zoom + this.cam.y]; }
   focus(wx, wy, smooth = true) { this.camTarget = smooth ? { x: wx, y: wy } : null; if (!smooth) { this.cam.x = wx; this.cam.y = wy; this.clampCam(); } }
-  focusBuilding(id) { const b = BUILDING_BY_ID[id]; this.focus((b.tx + b.w / 2) * TILE, (b.ty + b.h / 2) * TILE + 10); }
+  focusBuilding(id) { const b = this.G.pos(id); this.focus((b.tx + b.w / 2) * TILE, (b.ty + b.h / 2) * TILE + 10); }
   viewRect() { const [x0, y0] = this.toWorld(0, 0), [x1, y1] = this.toWorld(this.sw, this.sh); return { x0, y0, x1, y1 }; }
   // visible area not covered by the HUD (top) and nav/ticker (bottom)
   safeView() { const [x0, y0] = this.toWorld(12, 175), [x1, y1] = this.toWorld(this.sw - 12, this.sh - 100); return { x0, y0, x1: Math.max(x0 + 20, x1), y1: Math.max(y0 + 20, y1) }; }
@@ -370,6 +416,14 @@ export class World {
   tap(sx, sy) {
     const [wx, wy] = this.toWorld(sx, sy);
     const G = this.G;
+    if (this.placing) {
+      const d = G.def(this.placing.id);
+      this.placing.tx = clamp(Math.round(wx / TILE - d.w / 2), 0, MAP_W - d.w);
+      this.placing.ty = clamp(Math.round(wy / TILE - d.h / 2 - 0.3), 0, MAP_H - d.h - 1);
+      this.hooks.sfx(this.placeValid() ? 'tap' : 'error');
+      this.hooks.onPlaceMove && this.hooks.onPlaceMove();
+      return;
+    }
     const hitR = 14 / this.cam.zoom + 6;
     // golden goblin
     if (this.golden && Math.hypot(wx - this.golden.x, wy - (this.golden.y - 10)) < hitR + 8) {
@@ -405,7 +459,7 @@ export class World {
     }
     // fires
     for (const f of G.rt.fires) {
-      const b = BUILDING_BY_ID[f.bid];
+      const b = this.G.pos(f.bid);
       const fx = (b.tx + b.w / 2) * TILE, fy = (b.ty + b.h / 2) * TILE;
       if (Math.abs(wx - fx) < b.w * 8 && Math.abs(wy - fy) < b.h * 8 + 8) {
         G.tapFire(f.id);
@@ -429,10 +483,10 @@ export class World {
       return;
     }
     // buildings / plots
-    for (const b of BUILDINGS) {
+    for (const b of this.G.posAll()) {
+      if (!this.shown(b)) continue;
       const x0 = b.tx * TILE, y0 = b.ty * TILE - B_EXTRA + 6, x1 = (b.tx + b.w) * TILE, y1 = (b.ty + b.h) * TILE;
       if (wx >= x0 && wx < x1 && wy >= y0 && wy < y1) {
-        if (!G.districtOpen(b.district)) break;
         this.bounce[b.id] = 0.3;
         this.hooks.sfx('tap');
         this.hooks.onBuilding(b.id);
@@ -472,13 +526,17 @@ export class World {
   }
   workSpot(a, g) {
     if (g.assign?.t === 'b') {
-      const b = BUILDING_BY_ID[g.assign.id];
+      const b = this.G.pos(g.assign.id);
       const n = this.G.workers(b.id).indexOf(g);
       const offs = [0, -1, 1, -2];
       const tx = clamp(b.tx + Math.floor(b.w / 2) + offs[Math.max(0, n)], b.tx, b.tx + b.w - 1);
       return [tx, b.ty + b.h];
     }
-    if (g.assign?.t === 'def') { const b = BUILDING_BY_ID.barracks; return [b.tx + Math.floor(Math.random() * b.w), b.ty + b.h]; }
+    if (g.assign?.t === 'med') {
+      if (this.G.isBuilt('infirmary')) { const b = this.G.pos('infirmary'); return [b.tx + (g.uid % b.w), b.ty + b.h]; }
+      return [29 + (g.uid % 3), 27];
+    }
+    if (g.assign?.t === 'def') { const b = this.G.pos('barracks'); return [b.tx + Math.floor(Math.random() * b.w), b.ty + b.h]; }
     return null;
   }
   lineFor(a) {
@@ -504,7 +562,7 @@ export class World {
         const [tx, ty] = a.path[0];
         const gx = tx * TILE + 8, gy = ty * TILE + 12;
         const dx = gx - a.x, dy = gy - a.y, d = Math.hypot(dx, dy);
-        const sp = a.speed * (g.assign?.t === 'b' ? 1.2 : 1) * (a.run ? 2 : 1);
+        const sp = a.speed * (g.assign?.t === 'b' ? 1.2 : 1) * (a.run ? 2 : 1) * (g.assign?.t === 'med' ? 0.45 : 1);
         if (d < sp * dt + 0.5) { a.x = gx; a.y = gy; a.path.shift(); if (!a.path.length) { a.path = null; a.state = a.goal || 'idle'; a.timer = a.state === 'work' ? 6 + Math.random() * 10 : 1.5 + Math.random() * 4; a.run = false; } }
         else { a.x += dx / d * sp * dt; a.y += dy / d * sp * dt; if (Math.abs(dx) > 0.3) a.dir = dx > 0 ? 1 : -1; }
         continue;
@@ -566,7 +624,7 @@ export class World {
 
   // ------------------------------------------------------------ effects
   bubblePos(b) {
-    const d = BUILDING_BY_ID[b.bid];
+    const d = this.G.pos(b.bid);
     const t = this.time + (b.id * 10);
     return [(d.tx + d.w / 2) * TILE, d.ty * TILE - B_EXTRA + 4 + Math.sin(t * 2.5) * 2];
   }
@@ -591,10 +649,10 @@ export class World {
   smoke(x, y, dark) { this.particles.push({ type: 'puff', x, y, vx: (Math.random() - 0.5) * 6, vy: -8 - Math.random() * 6, t: 0, life: 2 + Math.random(), color: dark ? '#4a4a4a' : '#c8c8c8', r: 1.5 + Math.random() * 1.5, grow: 1.5 }); }
   shake(t = 0.3) { this.shakeT = t; }
 
-  onBuild(id) { const b = BUILDING_BY_ID[id]; this.focusBuilding(id); this.puff((b.tx + b.w / 2) * TILE, (b.ty + b.h) * TILE - 6, '#c8a878', 16); }
-  onBuilt(id) { const b = BUILDING_BY_ID[id]; const x = (b.tx + b.w / 2) * TILE, y = (b.ty + b.h / 2) * TILE; this.confetti(x, y - 10, 50); this.puff(x, y + 10, '#d8c8a8', 20); this.flash[id] = 0.5; this.bounce[id] = 0.5; this.addFloat(x, y - 30, 'BUILT!', '#7aff6a', 1.8, 1.4); }
-  onUpgrade(id, n) { const b = BUILDING_BY_ID[id]; const x = (b.tx + b.w / 2) * TILE, y = b.ty * TILE; this.bounce[id] = 0.35; this.sparkle(x, y, 10, '#ffe060'); this.addFloat(x, y - 6, n > 1 ? `+${n} levels` : 'Level up!', '#ffe060', 1.1); }
-  onMilestone(id, lvl) { const b = BUILDING_BY_ID[id]; const x = (b.tx + b.w / 2) * TILE, y = b.ty * TILE; this.confetti(x, y, 70); this.flash[id] = 0.7; this.bounce[id] = 0.6; this.addFloat(x, y - 14, `LEVEL ${lvl}! INCOME ×2`, '#ff80ff', 2.4, 1.3); this.shake(0.25); }
+  onBuild(id) { const b = this.G.pos(id); this.focusBuilding(id); this.puff((b.tx + b.w / 2) * TILE, (b.ty + b.h) * TILE - 6, '#c8a878', 16); }
+  onBuilt(id) { const b = this.G.pos(id); const x = (b.tx + b.w / 2) * TILE, y = (b.ty + b.h / 2) * TILE; this.confetti(x, y - 10, 50); this.puff(x, y + 10, '#d8c8a8', 20); this.flash[id] = 0.5; this.bounce[id] = 0.5; this.addFloat(x, y - 30, 'BUILT!', '#7aff6a', 1.8, 1.4); }
+  onUpgrade(id, n) { const b = this.G.pos(id); const x = (b.tx + b.w / 2) * TILE, y = b.ty * TILE; this.bounce[id] = 0.35; this.sparkle(x, y, 10, '#ffe060'); this.addFloat(x, y - 6, n > 1 ? `+${n} levels` : 'Level up!', '#ffe060', 1.1); }
+  onMilestone(id, lvl) { const b = this.G.pos(id); const x = (b.tx + b.w / 2) * TILE, y = b.ty * TILE; this.confetti(x, y, 70); this.flash[id] = 0.7; this.bounce[id] = 0.6; this.addFloat(x, y - 14, `LEVEL ${lvl}! INCOME ×2`, '#ff80ff', 2.4, 1.3); this.shake(0.25); }
 
   // ------------------------------------------------------------ update
   update(dt) {
@@ -613,6 +671,8 @@ export class World {
       if (Math.abs(this.cam.vx) < 2 && Math.abs(this.cam.vy) < 2) this.cam.vx = this.cam.vy = 0;
       this.clampCam();
     }
+    this.applyPlacements();
+    this.refreshPlots();
     this.syncAgents();
     this.updateAgents(dt);
     for (const k in this.bounce) { this.bounce[k] -= dt; if (this.bounce[k] <= 0) delete this.bounce[k]; }
@@ -634,16 +694,16 @@ export class World {
     if (Math.random() < dt * 3) {
       const opts = ['tavern', 'smithy', 'potion', 'cauldron', 'alchemy', 'hatchery'].filter(id => G.isBuilt(id) && !G.isConstructing(id));
       if (opts.length) {
-        const id = pick(opts), b = BUILDING_BY_ID[id];
+        const id = pick(opts), b = this.G.pos(id);
         const sx = { tavern: b.w * TILE - 10, smithy: b.w * TILE - 18, potion: b.w * TILE / 2, cauldron: b.w * TILE / 2, alchemy: b.w * TILE / 2, hatchery: b.w * TILE / 2 }[id];
         const sy = { tavern: -26, smithy: -24, potion: -36, cauldron: -10, alchemy: -26, hatchery: -40 }[id];
         if (id === 'cauldron' || id === 'potion' || id === 'alchemy') this.particles.push({ type: 'spark', x: b.tx * TILE + sx + (Math.random() - 0.5) * 12, y: (b.ty + b.h) * TILE + sy, vx: 0, vy: -12, t: 0, life: 1, color: id === 'potion' ? '#e0a0ff' : '#a0ffa0', g: -2 });
         else this.smoke(b.tx * TILE + sx, (b.ty + b.h) * TILE + sy, id === 'hatchery');
       }
     }
-    for (const id in G.s.damaged) { if (Math.random() < dt * 2) { const b = BUILDING_BY_ID[id]; this.smoke((b.tx + Math.random() * b.w) * TILE, b.ty * TILE, true); } }
+    for (const id in G.s.damaged) { if (Math.random() < dt * 2) { const b = this.G.pos(id); this.smoke((b.tx + Math.random() * b.w) * TILE, b.ty * TILE, true); } }
     // construction
-    for (const b of BUILDINGS) {
+    for (const b of this.G.posAll()) {
       const st = G.s.buildings[b.id];
       if (st.built > G.now()) {
         if (Math.random() < dt * 6) this.puff((b.tx + Math.random() * b.w) * TILE, (b.ty + b.h) * TILE - 4, '#c8b088', 1);
@@ -719,8 +779,8 @@ export class World {
     }
     // drawables
     const items = [];
-    for (const b of BUILDINGS) {
-      if (!G.districtOpen(b.district)) continue;
+    for (const b of this.G.posAll()) {
+      if (!this.shown(b) || (this.placing && this.placing.id === b.id && this.placing.mode === 'move')) continue;
       const by = (b.ty + b.h) * TILE;
       if ((b.tx + b.w) * TILE < v.x0 - 20 || b.tx * TILE > v.x1 + 20 || by < v.y0 - 10 || by - b.h * TILE - B_EXTRA > v.y1) continue;
       items.push({ y: by, draw: () => this.drawBuilding(b) });
@@ -740,30 +800,28 @@ export class World {
     if (this.golden) items.push({ y: this.golden.y, draw: () => this.drawGolden() });
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
+    // placement ghost
+    if (this.placing) {
+      const p = this.placing, d = G.def(p.id), ok = this.placeValid();
+      ctx.fillStyle = ok ? 'rgba(122,255,106,0.35)' : 'rgba(255,80,80,0.4)';
+      ctx.fillRect(p.tx * TILE, p.ty * TILE, d.w * TILE, d.h * TILE);
+      ctx.fillStyle = ok ? 'rgba(122,255,106,0.6)' : 'rgba(255,80,80,0.6)';
+      ctx.fillRect((p.tx + Math.floor(d.w / 2)) * TILE + 4, (p.ty + d.h) * TILE + 4, 8, 8); // door
+      const spr = buildingSprite(p.id, d.w, d.h, G.isBuilt(p.id) ? G.tier(p.id) : 0);
+      ctx.globalAlpha = 0.55 + Math.sin(this.time * 6) * 0.15;
+      ctx.drawImage(spr, p.tx * TILE, (p.ty + d.h) * TILE - spr.height);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = ok ? '#7aff6a' : '#ff5a5a'; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
+      ctx.strokeRect(p.tx * TILE + 0.5, p.ty * TILE + 0.5, d.w * TILE - 1, d.h * TILE - 1); ctx.setLineDash([]);
+    }
     // fires on top
     for (const f of G.rt.fires) {
-      const b = BUILDING_BY_ID[f.bid];
+      const b = this.G.pos(f.bid);
       for (let i = 0; i < Math.max(1, f.hp); i++) this.drawFire((b.tx + 0.6 + i * (b.w - 1.2) / 2) * TILE, (b.ty + b.h) * TILE - 12 - (i % 2) * 10, 1.4);
       if (Math.random() < 0.3) this.smoke((b.tx + Math.random() * b.w) * TILE, b.ty * TILE - 8, true);
     }
-    // locked districts fog
-    for (const d of DISTRICTS) {
-      if (G.districtOpen(d.id)) continue;
-      const x = d.x * TILE, y = d.y * TILE, w = d.w * TILE, h = d.h * TILE;
-      ctx.fillStyle = 'rgba(24,26,44,0.6)';
-      ctx.fillRect(x, y, w, h);
-      // drifting fog banks
-      ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-      for (let i = 0; i < Math.ceil(w * h / 9000); i++) {
-        const cx = x + ((i * 71 + this.time * (3 + i % 3)) % (w + 60)) - 30, cy = y + 10 + (i * 43) % Math.max(10, h - 20);
-        ctx.fillStyle = 'rgba(200,205,225,0.07)';
-        for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.ellipse(cx + k * 9 - 13, cy + (k % 2) * 4, 16, 8, 0, 0, 7); ctx.fill(); }
-      }
-      ctx.restore();
-      // rope border with stakes
-      ctx.strokeStyle = '#e8d8a0'; ctx.lineWidth = 1; ctx.setLineDash([3, 2]);
-      ctx.strokeRect(x + 2.5, y + 2.5, w - 5, h - 5); ctx.setLineDash([]);
-    }
+    // unexplored land is hidden under drifting fog
+    this.renderFog(ctx);
     // argue cloud
     if (this.argueCloud) {
       const c = this.argueCloud;
@@ -798,6 +856,77 @@ export class World {
     this.renderLabels(ctx);
   }
 
+  fogTexture() {
+    if (this.fogTex) return this.fogTex;
+    // tileable soft noise
+    const N = 128, c = makeCanvas(N, N), x = c.getContext('2d'), img = x.createImageData(N, N);
+    const h = (i, j) => { i = ((i % 16) + 16) % 16; j = ((j % 16) + 16) % 16; let v = (i * 374761393 + j * 668265263) ^ 1442695041; v = Math.imul(v ^ (v >>> 13), 1274126177); return ((v ^ (v >>> 16)) >>> 0) / 4294967296; };
+    const noise = (u, v, f) => {
+      const fx = u * f, fy = v * f, ix = Math.floor(fx), iy = Math.floor(fy), ax = fx - ix, ay = fy - iy;
+      const sx = ax * ax * (3 - 2 * ax), sy = ay * ay * (3 - 2 * ay);
+      const g = (i, j) => h(i % f, j % f);
+      const a = g(ix, iy), b = g(ix + 1, iy), cc = g(ix, iy + 1), d = g(ix + 1, iy + 1);
+      return a + (b - a) * sx + (cc - a) * sy + (a - b - cc + d) * sx * sy;
+    };
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const u = i / N, v = j / N;
+      const n = noise(u, v, 4) * 0.55 + noise(u, v, 8) * 0.3 + noise(u, v, 16) * 0.15;
+      const k = (j * N + i) * 4;
+      img.data[k] = 236; img.data[k + 1] = 240; img.data[k + 2] = 246;
+      img.data[k + 3] = Math.max(0, Math.min(255, (n - 0.25) * 420));
+    }
+    x.putImageData(img, 0, 0);
+    return (this.fogTex = c);
+  }
+  renderFog(ctx) {
+    const G = this.G, locked = DISTRICTS.filter(d => !G.districtOpen(d.id));
+    if (!locked.length) return;
+    // fog is painted at half resolution on its own layer, then scaled up smoothly
+    const R = 2, fc = this.fogLayer || (this.fogLayer = makeCanvas(WW / R, WH / R));
+    const f = fc.getContext('2d');
+    f.setTransform(1, 0, 0, 1, 0, 0);
+    f.clearRect(0, 0, fc.width, fc.height);
+    f.setTransform(1 / R, 0, 0, 1 / R, 0, 0);
+    const FE = 22; // feather width (world px) where fog meets open land
+    const openSide = (d, side) => {
+      const probe = { l: [d.x - 1, d.y + d.h / 2], r: [d.x + d.w, d.y + d.h / 2], t: [d.x + d.w / 2, d.y - 1], b: [d.x + d.w / 2, d.y + d.h] }[side];
+      const [x, y] = probe.map(Math.floor);
+      if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) return false;
+      return G.tileOpen(x, y);
+    };
+    const rects = locked.map(d => {
+      const e = { l: openSide(d, 'l'), r: openSide(d, 'r'), t: openSide(d, 't'), b: openSide(d, 'b') };
+      return { d, e, x: d.x * TILE - (e.l ? FE / 2 : 0), y: d.y * TILE - (e.t ? FE / 2 : 0), w: d.w * TILE + (e.l ? FE / 2 : 0) + (e.r ? FE / 2 : 0), h: d.h * TILE + (e.t ? FE / 2 : 0) + (e.b ? FE / 2 : 0) };
+    });
+    // misty base
+    f.fillStyle = 'rgba(206,214,226,0.72)';
+    for (const r of rects) f.fillRect(r.x, r.y, r.w, r.h);
+    // billowing layers drifting at different speeds
+    const tex = this.fogTexture();
+    if (!this.fogPat) this.fogPat = f.createPattern(tex, 'repeat');
+    const pat = this.fogPat;
+    for (const [alpha, vx, vy, scale] of [[0.95, 5, 1.5, 2.6], [0.75, -8, 3, 1.7], [0.5, 2, -4, 4]]) {
+      if (pat.setTransform) pat.setTransform(new DOMMatrix().translateSelf((this.time * vx) % (128 * scale), (this.time * vy) % (128 * scale)).scaleSelf(scale, scale));
+      f.globalAlpha = alpha; f.fillStyle = pat;
+      for (const r of rects) f.fillRect(r.x, r.y, r.w, r.h);
+    }
+    f.globalAlpha = 1;
+    // feather the edges that face explored land
+    f.globalCompositeOperation = 'destination-out';
+    for (const r of rects) {
+      const { e } = r;
+      const grad = (x0, y0, x1, y1, gx, gy, gw, gh) => { const g = f.createLinearGradient(x0, y0, x1, y1); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)'); f.fillStyle = g; f.fillRect(gx, gy, gw, gh); };
+      if (e.l) grad(r.x, 0, r.x + FE, 0, r.x, r.y, FE, r.h);
+      if (e.r) grad(r.x + r.w, 0, r.x + r.w - FE, 0, r.x + r.w - FE, r.y, FE, r.h);
+      if (e.t) grad(0, r.y, 0, r.y + FE, r.x, r.y, r.w, FE);
+      if (e.b) grad(0, r.y + r.h, 0, r.y + r.h - FE, r.x, r.y + r.h - FE, r.w, FE);
+    }
+    f.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(fc, 0, 0, WW, WH);
+    ctx.restore();
+  }
   dayPhase() { return (this.time / this.dayLen + 0.15) % 1; }
   darkness() {
     const p = this.dayPhase();
@@ -821,7 +950,7 @@ export class World {
     l.setTransform(S, 0, 0, S, ox, oy);
     l.globalCompositeOperation = 'destination-out';
     const lights = [];
-    for (const b of BUILDINGS) if (this.G.isBuilt(b.id) && this.G.districtOpen(b.district)) lights.push([(b.tx + b.w / 2) * TILE, (b.ty + b.h) * TILE - 12, 30]);
+    for (const b of this.G.posAll()) if (this.G.isBuilt(b.id)) lights.push([(b.tx + b.w / 2) * TILE, (b.ty + b.h) * TILE - 12, 30]);
     for (const d of DECOR) if (d.type === 'campfire' || d.type === 'fountain') lights.push([(d.tx + 1) * TILE, (d.ty + 1.5) * TILE, 44]);
     if (this.golden) lights.push([this.golden.x, this.golden.y - 10, 30]);
     for (const [x, y, r] of lights) {
@@ -927,7 +1056,27 @@ export class World {
       ctx.globalAlpha = 1;
       if (Math.random() < 0.05) this.particles.push({ type: 'spark', x: a.x + (Math.random() - 0.5) * 14, y: a.y - 10 - Math.random() * 10, vx: 0, vy: -8, t: 0, life: 0.8, color: ri === 4 ? '#ffb0d0' : '#fff0a0' });
     }
-    ctx.drawImage(a.dir < 0 ? sh.flip : sh.sheet, f * GOB_W, 0, GOB_W, GOB_H, x, y, GOB_W, GOB_H);
+    const hurt = g.assign?.t === 'med';
+    if (hurt && a.state === 'work') {
+      // lying in a sick bed
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round(a.x - 12), Math.round(a.y - 7), 24, 6);
+      ctx.fillStyle = '#8a5a30'; ctx.fillRect(Math.round(a.x - 12), Math.round(a.y - 1), 2, 3); ctx.fillRect(Math.round(a.x + 10), Math.round(a.y - 1), 2, 3);
+      ctx.save(); ctx.translate(Math.round(a.x), Math.round(a.y - 6)); ctx.rotate(-Math.PI / 2);
+      ctx.drawImage(sh.sheet, GOB_W, 0, GOB_W, GOB_H, -GOB_H + 4, -GOB_W / 2, GOB_W, GOB_H);
+      ctx.restore();
+      ctx.fillStyle = '#e8f0ff'; ctx.fillRect(Math.round(a.x - 2), Math.round(a.y - 12), 14, 6);
+      if (Math.floor(this.time * 1.5 + a.uid) % 3 === 0) { ctx.fillStyle = '#fff'; ctx.font = '6px sans-serif'; ctx.fillText('z', a.x + 8, a.y - 16 - (this.time * 4 % 4)); }
+    } else ctx.drawImage(a.dir < 0 ? sh.flip : sh.sheet, f * GOB_W, 0, GOB_W, GOB_H, x, y, GOB_W, GOB_H);
+    if (hurt) {
+      // red cross badge + heal progress
+      const bx = Math.round(a.x - 3), by = Math.round(a.y - (a.state === 'work' ? 22 : GOB_H + 4));
+      ctx.fillStyle = '#1c1424'; ctx.fillRect(bx - 1, by - 1, 9, 9); ctx.fillStyle = '#fff'; ctx.fillRect(bx, by, 7, 7);
+      ctx.fillStyle = '#e02a3a'; ctx.fillRect(bx + 3, by + 1, 1, 5); ctx.fillRect(bx + 1, by + 3, 5, 1);
+      if (g.inj && g.inj.end) {
+        const k = clamp((this.G.now() - g.inj.start) / (g.inj.end - g.inj.start), 0, 1);
+        ctx.fillStyle = '#1c1424'; ctx.fillRect(bx - 5, by + 9, 17, 3); ctx.fillStyle = '#7aff6a'; ctx.fillRect(bx - 4, by + 10, 15 * k, 1);
+      }
+    }
     if (a.state === 'work' && f === 7 && Math.random() < 0.04) this.particles.push({ type: 'spark', x: a.x + a.dir * 9, y: a.y - 5, vx: a.dir * 20, vy: -20, t: 0, life: 0.3, color: '#fff' });
   }
 
@@ -963,8 +1112,8 @@ export class World {
     // building level badges
     if (z >= 1.6) {
       ctx.font = `600 ${Math.round(clamp(z * 4.2, 10, 14))}px ${FONT}`;
-      for (const b of BUILDINGS) {
-        if (!G.districtOpen(b.district)) continue;
+      for (const b of this.G.posAll()) {
+        if (!this.shown(b)) continue;
         const st = G.s.buildings[b.id];
         const [sx, sy] = this.toScreen((b.tx + b.w / 2) * TILE, (b.ty + b.h) * TILE + 5);
         if (sx < -60 || sx > this.sw + 60 || sy < -20 || sy > this.sh + 40) continue;

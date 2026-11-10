@@ -10,7 +10,7 @@ function ensure() {
   ac = new AC();
   master = ac.createGain(); master.gain.value = 0.6; master.connect(ac.destination);
   sfxGain = ac.createGain(); sfxGain.gain.value = 0.5; sfxGain.connect(master);
-  musicGain = ac.createGain(); musicGain.gain.value = 0.16; musicGain.connect(master);
+  musicGain = ac.createGain(); musicGain.gain.value = 0.17; musicGain.connect(master);
   return ac;
 }
 
@@ -95,43 +95,132 @@ export function setMusic(on) {
   if (!on) stopMusic();
 }
 
-// --- simple procedural tavern jig in D dorian-ish
-const SCALE = [146.8, 164.8, 174.6, 196, 220, 246.9, 261.6, 293.7, 329.6, 349.2, 392, 440];
-const BASS = [73.4, 73.4, 98, 87.3, 73.4, 110, 98, 82.4];
+// --- Chill retro-fantasy soundtrack -------------------------------------------
+// Slow modal chord loop (D dorian / F lydian colours) with soft pads, a gentle
+// plucked arpeggio, a breathy "flute" lead, warm bass and a touch of echo + reverb.
+const BPM = 72, EIGHTH = 60 / BPM / 2;
+const N = (m) => 440 * Math.pow(2, (m - 69) / 12); // midi -> Hz
+// 4-bar progressions (midi chord tones), chosen per 8-bar section
+const PROGS = [
+  [[50, 57, 60, 65], [46, 53, 57, 62], [41, 48, 57, 64], [48, 55, 59, 64]],   // Dm9 - Bbmaj7 - Fmaj9 - C(add9)
+  [[50, 57, 60, 64], [43, 50, 57, 59], [45, 52, 55, 60], [46, 53, 57, 60]],   // Dm - G9 - Am7 - Bbmaj7
+  [[41, 48, 55, 64], [43, 50, 57, 59], [45, 52, 57, 60], [43, 50, 55, 62]],   // Fmaj7 - G6 - Am - Gsus
+];
+const MELODY_SCALE = [62, 64, 65, 67, 69, 72, 74, 76, 77, 79]; // D dorian, upper register
+let fx = null;
+
+function musicFx() {
+  if (fx) return fx;
+  const input = ac.createGain();
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.3;
+  // dotted-eighth echo
+  const delay = ac.createDelay(2); delay.delayTime.value = EIGHTH * 1.5;
+  const fb = ac.createGain(); fb.gain.value = 0.32;
+  const dwet = ac.createGain(); dwet.gain.value = 0.28;
+  const dlp = ac.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 1800;
+  delay.connect(dlp); dlp.connect(fb); fb.connect(delay); dlp.connect(dwet);
+  // simple generated reverb
+  const verb = ac.createConvolver();
+  const len = Math.floor(ac.sampleRate * 2.8), ir = ac.createBuffer(2, len, ac.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+  verb.buffer = ir;
+  const vwet = ac.createGain(); vwet.gain.value = 0.35;
+  input.connect(lp);
+  lp.connect(musicGain); lp.connect(delay); lp.connect(verb);
+  dwet.connect(musicGain); verb.connect(vwet); vwet.connect(musicGain);
+  fx = { input };
+  return fx;
+}
+
+function voice(freq, t, dur, { type = 'triangle', vol = 0.1, attack = 0.02, release = 0.3, detune = 0, vibrato = 0, filter = 0 } = {}) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t); o.detune.value = detune;
+  let node = o;
+  if (vibrato) {
+    const lfo = ac.createOscillator(), lg = ac.createGain();
+    lfo.frequency.value = 5; lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(vibrato, t + Math.min(0.4, dur));
+    lfo.connect(lg); lg.connect(o.frequency); lfo.start(t); lfo.stop(t + dur + release + 0.05);
+  }
+  if (filter) { const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = filter; o.connect(f); node = f; }
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + attack);
+  g.gain.setValueAtTime(vol, t + Math.max(attack, dur));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + release);
+  node.connect(g); g.connect(musicFx().input);
+  o.start(t); o.stop(t + dur + release + 0.05);
+}
+function softNoise(t, vol, hp = 6000, dur = 0.05) {
+  const len = Math.floor(ac.sampleRate * dur), buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const f = ac.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
+  const g = ac.createGain(); g.gain.value = vol;
+  src.connect(f); f.connect(g); g.connect(musicFx().input); src.start(t);
+}
+
+function makeMelody(prog) {
+  // gentle phrase: a few long notes and rests per bar, leaning on chord tones
+  const notes = [];
+  let idx = 3 + Math.floor(Math.random() * 3);
+  for (let bar = 0; bar < 8; bar++) {
+    const chord = prog[bar % 4];
+    let step = 0;
+    while (step < 8) {
+      if (Math.random() < 0.38) { step += Math.random() < 0.5 ? 2 : 1; continue; }
+      idx = Math.max(0, Math.min(MELODY_SCALE.length - 1, idx + [-2, -1, -1, 0, 1, 1, 2][Math.floor(Math.random() * 7)]));
+      let m = MELODY_SCALE[idx];
+      // snap the first note of a bar to a chord tone
+      if (step === 0) { const tones = chord.map(c => c % 12); for (let k = 0; k < 3 && !tones.includes(m % 12); k++) m++; }
+      const len = [2, 2, 3, 4, 4, 6][Math.floor(Math.random() * 6)];
+      notes.push({ bar, step, m, len: Math.min(len, 8 - step) });
+      step += len;
+    }
+  }
+  return notes;
+}
+
+let musicState = null;
 function startMusic() {
   if (!ac || musicTimer) return;
-  let step = 0;
-  let phrase = makePhrase();
-  const beat = 0.19;
-  let next = ac.currentTime + 0.1;
-  musicTimer = setInterval(() => {
-    if (!ac) return;
-    while (next < ac.currentTime + 0.5) {
-      const i = step % 32;
-      if (i === 0 && step > 0 && Math.random() < 0.5) phrase = makePhrase();
-      const n = phrase[i];
-      if (n !== null) tone(SCALE[n], beat * 0.9, 'triangle', 0.22, 0, next - ac.currentTime, musicGain);
-      if (i % 4 === 0) tone(BASS[(Math.floor(step / 4)) % BASS.length], beat * 1.8, 'square', 0.12, 0, next - ac.currentTime, musicGain);
-      if (i % 2 === 1 && Math.random() < 0.5) {
-        // tiny percussion tick
-        const t = next - ac.currentTime;
-        tone(2400, 0.02, 'square', 0.03, 0, t, musicGain);
-      }
-      next += beat;
-      step++;
+  musicFx();
+  musicState = { next: ac.currentTime + 0.15, step: 0, section: 0, prog: PROGS[0], melody: null };
+  musicTimer = setInterval(scheduleMusic, 100);
+}
+function scheduleMusic() {
+  if (!ac || !musicState) return;
+  const M = musicState;
+  while (M.next < ac.currentTime + 0.7) {
+    const t = M.next;
+    const s8 = M.step % 64; // 8 bars of 8 eighths
+    if (s8 === 0) {
+      M.section++;
+      M.prog = PROGS[Math.floor(Math.random() * PROGS.length)];
+      // every other section has a lead melody; the rest is just the calm bed
+      M.melody = M.section % 2 === 0 ? makeMelody(M.prog) : null;
     }
-  }, 120);
-}
-function makePhrase() {
-  const p = [];
-  let n = 4 + Math.floor(Math.random() * 3);
-  for (let i = 0; i < 32; i++) {
-    if (Math.random() < 0.22) { p.push(null); continue; }
-    n += Math.floor(Math.random() * 5) - 2;
-    n = Math.max(0, Math.min(SCALE.length - 1, n));
-    if (i % 8 === 7) n = [0, 4, 7][Math.floor(Math.random() * 3)];
-    p.push(n);
+    const bar = Math.floor(s8 / 8), st = s8 % 8;
+    const chord = M.prog[bar % 4];
+    if (st === 0) {
+      // warm pad: two detuned soft voices per chord tone
+      for (const m of chord.slice(1)) {
+        voice(N(m), t, EIGHTH * 7.6, { type: 'triangle', vol: 0.028, attack: 0.9, release: 1.4, detune: -6, filter: 1400 });
+        voice(N(m), t, EIGHTH * 7.6, { type: 'sine', vol: 0.03, attack: 1.0, release: 1.4, detune: 7 });
+      }
+      voice(N(chord[0] - 12), t, EIGHTH * 3.5, { type: 'triangle', vol: 0.11, attack: 0.04, release: 0.6, filter: 600 });
+      softNoise(t, 0.012, 200, 0.12); // soft "kick" thump
+    }
+    if (st === 4) voice(N(chord[0] - 12 + (Math.random() < 0.5 ? 7 : 0)), t, EIGHTH * 3, { type: 'triangle', vol: 0.08, attack: 0.04, release: 0.5, filter: 600 });
+    // plucked arpeggio (retro square, heavily softened)
+    const pattern = [0, 1, 2, 3, 2, 1, 2, 3];
+    const am = chord[pattern[st]] + 12;
+    if (!(M.section % 3 === 1 && st % 2 === 1)) voice(N(am), t, EIGHTH * 0.6, { type: 'square', vol: 0.018, attack: 0.005, release: 0.35, filter: 1500 });
+    if (st % 2 === 1 && Math.random() < 0.6) softNoise(t, 0.006, 7000, 0.03); // brushed hat
+    // breathy flute lead
+    if (M.melody) for (const n of M.melody) if (n.bar === bar && n.step === st) voice(N(n.m), t, EIGHTH * n.len * 0.95, { type: 'sine', vol: 0.06, attack: 0.08, release: 0.5, vibrato: 4 });
+    // sparkly chime every 4 bars
+    if (s8 % 32 === 28 && Math.random() < 0.7) voice(N(chord[3] + 24), t, 0.1, { type: 'sine', vol: 0.025, attack: 0.002, release: 1.6 });
+    M.next += EIGHTH;
+    M.step++;
   }
-  return p;
 }
-function stopMusic() { if (musicTimer) clearInterval(musicTimer); musicTimer = null; }
+function stopMusic() { if (musicTimer) clearInterval(musicTimer); musicTimer = null; musicState = null; }

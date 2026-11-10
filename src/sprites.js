@@ -224,6 +224,9 @@ function drawTool(p, tool, x, y, up, look) {
     case 'whip':
       p.vline(x, y - 3, 4, '#5a3a20'); p.px(x + 1, y - 4, '#5a3a20'); p.px(x + 2, y - 5, '#5a3a20'); p.px(x + 3, y - 5, '#5a3a20'); p.px(x + 4, y - 4, '#5a3a20');
       break;
+    case 'medkit':
+      p.rect(x - 1, y - 4, 6, 5, '#f0f0f0'); p.hline(x - 1, y - 4, 6, '#ffffff'); p.vline(x + 1, y - 3, 3, '#e02a3a'); p.hline(x, y - 2, 3, '#e02a3a'); p.px(x + 1, y - 5, '#8a8a8a'); p.px(x + 2, y - 5, '#8a8a8a');
+      break;
     case 'chain':
       for (let i = 0; i < 5; i++) p.px(x + (i % 2), y - i, '#9ab0c0');
       p.rect(x - 1, y + 1, 3, 2, '#7a8a9a');
@@ -260,6 +263,7 @@ function drawHat(p, hat, cx, top, look) {
     case 'ratcrown': p.rect(x - 4, top - 2, 8, 3, '#8a8a8a'); p.px(x - 4, top - 3, '#8a8a8a'); p.px(x + 3, top - 3, '#8a8a8a'); p.px(x - 2, top - 4, '#c0a0a0'); p.px(x + 1, top - 4, '#c0a0a0'); break;
     case 'spikes': for (let i = -4; i <= 4; i += 2) { p.vline(x + i, top - 3, 3, '#2a5a3a'); p.px(x + i, top - 4, '#4a8a5a'); } break;
     case 'stars': p.px(x - 4, top - 3, '#fff8c0'); p.px(x + 3, top - 4, '#fff8c0'); p.px(x, top - 6, '#ffe060'); p.px(x + 5, top - 1, '#ffe060'); p.px(x - 6, top, '#fff'); break;
+    case 'nurse': p.rect(x - 4, top - 2, 8, 3, '#ffffff'); p.hline(x - 5, top + 1, 10, '#e8e8e8'); p.px(x, top - 2, '#e02a3a'); p.hline(x - 1, top - 1, 3, '#e02a3a'); p.px(x, top, '#e02a3a'); break;
     case 'dragonhelm': p.rect(x - 5, top - 2, 10, 4, '#a03020'); p.hline(x - 5, top + 2, 10, '#702010'); p.px(x - 6, top - 3, '#f0e8d0'); p.px(x + 5, top - 3, '#f0e8d0'); p.px(x - 7, top - 4, '#f0e8d0'); p.px(x + 6, top - 4, '#f0e8d0'); p.px(x - 2, top - 1, '#ffd040'); p.px(x + 1, top - 1, '#ffd040'); break;
   }
 }
@@ -793,6 +797,21 @@ const BUILD_DRAW = {
     for (let i = 0; i < 3; i++) { p.vline(x + 1 + i * 2, y - 6, 6, '#c8ccd8'); }
     p.flag(W - 7, y - 12, '#c03030');
     if (t >= 2) { p.rect(x + w - 8, H - 12, 6, 4, '#7a7e90'); }
+  },
+  infirmary(p, W, H, t) {
+    const x = 4, w = W - 8, y = H - 26 - (t >= 3 ? 6 : 0), h = H - 8 - y;
+    house(p, x, y, w, h, '#e8e0d0', t >= 2 ? '#c03a3a' : '#a04a3a', { brick: true, roofH: 11 });
+    p.door(W / 2 - 3, H - 16, 6, 8, '#8a6a4a');
+    p.window(x + 4, y + 4, 3, 3, '#c8f0ff'); p.window(x + w - 7, y + 4, 3, 3, '#c8f0ff');
+    if (t >= 3) { p.window(x + 4, y + 11, 3, 3, '#c8f0ff'); p.window(x + w - 7, y + 11, 3, 3, '#c8f0ff'); }
+    // big red cross sign
+    p.rect(W / 2 - 4, y - 9, 9, 9, '#ffffff'); p.rect(W / 2 - 1, y - 8, 3, 7, '#e02a3a'); p.rect(W / 2 - 3, y - 6, 7, 3, '#e02a3a');
+    // beds outside
+    p.rect(1, H - 12, 7, 3, '#ffffff'); p.rect(1, H - 13, 2, 2, '#f0d0d0'); p.vline(1, H - 9, 2, '#8a5a30'); p.vline(7, H - 9, 2, '#8a5a30');
+    if (t >= 1) { p.rect(W - 8, H - 12, 7, 3, '#ffffff'); p.rect(W - 3, H - 13, 2, 2, '#f0d0d0'); p.vline(W - 8, H - 9, 2, '#8a5a30'); p.vline(W - 2, H - 9, 2, '#8a5a30'); }
+    // herb pots
+    p.rect(x + 1, H - 11, 3, 3, '#a05a30'); p.px(x + 2, H - 12, '#5ad04a'); p.px(x + 1, H - 13, '#5ad04a');
+    if (t >= 4) p.flag(W / 2, y - 20, '#e02a3a');
   },
   tower(p, W, H, t) {
     const tx = W / 2 - 6, tw = 12, ty = H - 44;

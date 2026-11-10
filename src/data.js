@@ -24,6 +24,7 @@ export const JOBS = {
   warrior: { name: 'Warrior', icon: 'sword', desc: 'Bonks first, asks never.' },
   builder: { name: 'Builder', icon: 'hammer', desc: 'Builds things. Mostly upright.' },
   scout: { name: 'Scout', icon: 'map', desc: 'Goes places. Returns. Usually.' },
+  medic: { name: 'Medic', icon: 'heart', desc: 'Patches up bonked goblins. Mostly with tape.' },
 };
 
 // Combat behavior by job
@@ -92,6 +93,7 @@ export const JOB_LINES = {
   thief: ['Pocket is full. Get bigger pocket.', 'Not stealing. Collecting.', 'Shhh.'],
   warrior: ['WAAAGH!', 'Who wants a bonk?', 'My sword has a name. It is Sword.'],
   builder: ['Measure once, hammer twice.', 'Is it level? Close enough.', 'Hammer time!'],
+  medic: ['Hold still. This will sting. A lot.', 'Have you tried licking it?', 'Next patient!', 'Walk it off. Slowly.'],
   scout: ['I saw a cave! It saw me back.', 'Adventure!', 'Map says: here be snacks.'],
 };
 
@@ -153,6 +155,9 @@ export const BUILDINGS = [
   { id: 'barracks', name: 'Bonk Barracks', kind: 'util', job: 'warrior', district: 'market', tx: 43, ty: 25, w: 3, h: 3,
     baseCost: 30000, growth: 2.3, upCost: 30000, unlock: 7, maxLvl: 25,
     desc: 'Defenders live here. Each level: +1 defender slot (max 4) and +15% defense power.' },
+  { id: 'infirmary', name: 'Goblin Infirmary', kind: 'util', job: 'medic', district: 'muck', tx: 30, ty: 30, w: 3, h: 3,
+    baseCost: 400, growth: 4, upCost: 4000, unlock: 4, maxLvl: 6,
+    desc: 'Bonked goblins heal here (2 min each). Each medic heals one goblin at a time. Each level adds a medic bed. Comes with one medic; more must be earned.' },
   { id: 'tower', name: 'Squint Tower', kind: 'util', job: 'scout', district: 'shady', tx: 14, ty: 18, w: 3, h: 3,
     baseCost: 5e7, growth: 2.5, upCost: 5e7, unlock: 12, maxLvl: 20,
     desc: 'Lookouts spot invaders early. Each level: +10% defense HP and +5% golden goblin rate.' },
@@ -163,6 +168,9 @@ export const BIZ = BUILDINGS.filter(b => b.kind === 'biz');
 export const MILESTONES = [25, 50, 100, 200, 300, 400, 500, 600, 800, 1000];
 // tier visuals based on number of milestones reached (cap 4)
 
+export const DECOR_SIZE = { campfire: [2, 2], chiefhut: [3, 3], fountain: [3, 2], statue: [2, 2] };
+export const HEAL_MS = 120000;
+export const MEDIC_NAMES = ['Nurse Bandagewart', 'Doc Scabbins', 'Sister Stitchgob', 'Medic Mossfoot', 'Dr. Pokewell', 'Nurse Plasterpants', 'Healer Hobnob', 'Doc Leechlove', 'Sawbones Snik', 'Nurse Gauzegrin'];
 export const DECOR = [
   { type: 'campfire', tx: 29, ty: 25 },
   { type: 'chiefhut', tx: 31, ty: 24 },
@@ -219,7 +227,7 @@ export const HATS = ['none', 'none', 'bandana', 'pot', 'hood', 'cap', 'helmet', 
 // Jobs' default tools
 export const JOB_TOOL = {
   miner: 'pick', farmer: 'shroom', brewer: 'mug', smith: 'hammer', alchemist: 'potion', merchant: 'bag',
-  gambler: 'dice', thief: 'dagger', warrior: 'sword', builder: 'hammer', scout: 'spyglass',
+  gambler: 'dice', thief: 'dagger', warrior: 'sword', builder: 'hammer', scout: 'spyglass', medic: 'medkit',
 };
 
 // Named collectible goblins (Epic+). look overrides procedural appearance.
@@ -594,6 +602,7 @@ export const STORY = [
   { text: 'Unlock the Market Ward', goal: { district: 'market' }, reward: { gold: 3000 } },
   { text: 'Build the Expedition Lodge', goal: { build: 'lodge' }, reward: { gems: 15 } },
   { text: 'Win a battle in Whispering Woods', goal: { stat: ['battlesWon', 1] }, reward: { mushrooms: 80 } },
+  { text: 'Build the Goblin Infirmary', goal: { build: 'infirmary' }, reward: { gems: 15 }, hint: 'Injured goblins heal there. Place it anywhere you like.' },
   { text: 'Send an expedition', goal: { stat: ['expSent', 1] }, reward: { gems: 15 } },
   { text: 'Own 6 goblins', goal: { goblins: 6 }, reward: { gems: 20 } },
   { text: 'Build the Scrap Smithy', goal: { build: 'smithy' }, reward: { ore: 30 } },

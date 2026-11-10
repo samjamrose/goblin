@@ -176,7 +176,7 @@ export class BattleScreen {
 
   finish() {
     const won = this.b.winner === 'g';
-    const res = this.cfg.onEnd(won, this.pokes, this.fled);
+    const res = this.cfg.onEnd(won, this.pokes, this.fled, this.b);
     const el = this.root.querySelector('.bt-result');
     el.querySelector('h2').textContent = won ? 'VICTORY!' : this.fled ? 'RETREAT!' : this.b.timeout ? 'TIME UP!' : 'DEFEAT...';
     el.querySelector('h2').className = won ? 'win' : 'lose';
