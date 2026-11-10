@@ -107,17 +107,20 @@ async function boot() {
   // ---------------- loop
   let last = performance.now(), acc1 = 0, accSave = 0, accUi = 0;
   function frame(now) {
+    requestAnimationFrame(frame);
+    try { step(now); } catch (e) { console.error(e); }
+  }
+  function step(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     G.tick(dt);
     acc1 += dt; accSave += dt; accUi += dt;
-    if (acc1 >= 1) { acc1 = 0; G.slowTick(); ui.badges(); }
+    if (acc1 >= 1) { acc1 = 0; G.slowTick(); ui.badges(); ui.flushQueue(); }
     if (accSave >= 15) { accSave = 0; G.save(); }
     if (battle.active) { battle.update(dt); battle.render(); }
     else { world.update(dt); world.render(); }
     ui.hud();
     if (accUi >= 0.25) { accUi = 0; ui.refresh(); }
-    requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 

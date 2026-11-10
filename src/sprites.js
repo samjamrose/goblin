@@ -858,13 +858,26 @@ export function buildingSprite(id, w, h, tier = 0, isDecor = false) {
   const tmp = makeCanvas(W, H);
   const tp = P(tmp.getContext('2d'));
   if (fn) fn(tp, W, H, tier);
+  if (!isDecor && tier >= 2) {
+    // lantern posts flank upgraded buildings
+    for (const lx of [1, W - 3]) {
+      tp.vline(lx, H - 19, 12, '#4a3a2a'); tp.rect(lx - 1, H - 22, 3, 3, '#3a2a2a'); tp.px(lx, H - 21, '#ffd860');
+    }
+  }
+  if (!isDecor && tier >= 3) { tp.coinPile(3, H - 6, 5); tp.coinPile(W - 8, H - 6, 5); }
+  if (!isDecor && tier >= 4) outline(tmp, '#ffd860');
   outline(tmp);
   groundShadow(p, W, H);
+  if (!isDecor && tier >= 1) {
+    // stone foundation that grows fancier with tier
+    const fc = tier >= 4 ? '#d8c890' : tier >= 2 ? '#a8a49a' : '#8a7a62';
+    p.stones(3, H - 9, W - 6, 5, fc, 9 + tier);
+    p.hline(3, H - 9, W - 6, shade(fc, 0.25));
+  }
   c.getContext('2d').drawImage(tmp, 0, 0);
-  // tier sparkle crown for tier 4
   if (tier >= 4 && !isDecor) {
     const p2 = P(c.getContext('2d'));
-    p2.px(3, 4 + B_EXTRA - 18, '#fff8c0');
+    for (const [sx, sy] of [[4, H - 30], [W - 6, H - 40], [W / 2 + 7, H - 46]]) { p2.px(sx, sy, '#fff8c0'); p2.px(sx - 1, sy, '#ffe060'); p2.px(sx + 1, sy, '#ffe060'); p2.px(sx, sy - 1, '#ffe060'); p2.px(sx, sy + 1, '#ffe060'); }
   }
   cache.set(key, c);
   return c;

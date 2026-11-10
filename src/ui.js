@@ -19,9 +19,15 @@ function bThumb(id, tier) {
   if (thumbCache[k]) return thumbCache[k];
   const b = BUILDING_BY_ID[id];
   const spr = buildingSprite(id, b.w, b.h, tier);
-  const c = makeCanvas(spr.width * 2, spr.height * 2);
+  // crop to the drawn pixels so the thumbnail fills its box
+  const d = spr.getContext('2d').getImageData(0, 0, spr.width, spr.height).data;
+  let x0 = spr.width, y0 = spr.height, x1 = 0, y1 = 0;
+  for (let y = 0; y < spr.height; y++) for (let x = 0; x < spr.width; x++) if (d[(y * spr.width + x) * 4 + 3] > 40) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < x0) { x0 = 0; y0 = 0; x1 = spr.width - 1; y1 = spr.height - 1; }
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, side = Math.max(w, h) + 2;
+  const c = makeCanvas(side * 3, side * 3);
   const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(spr, 0, 0, c.width, c.height);
+  ctx.drawImage(spr, x0, y0, w, h, (side - w) / 2 * 3, (side - h) * 3 - 3, w * 3, h * 3);
   return (thumbCache[k] = c.toDataURL());
 }
 const enemyThumbCache = {};
@@ -190,7 +196,7 @@ export class UI {
     if (!open || !lvlOk) return `<div class="card lock row"><div class="thumb"><img src="${bThumb(b.id, 0)}" style="filter:brightness(.3)"></div><div class="grow"><div class="bname">${b.name}</div><div class="bsub">${!lvlOk ? `🔒 Requires Capital Level ${b.unlock}` : `🔒 Unlock ${DISTRICT_BY_ID[b.district].name}`}</div></div></div>`;
     const max = b.maxLvl && st.lvl >= b.maxLvl;
     return `<div class="card row" data-act="open-building" data-id="${b.id}">
-      <div class="thumb"><img src="${bThumb(b.id, Math.min(4, Math.floor(st.lvl / 3)))}"></div>
+      <div class="thumb"><img src="${bThumb(b.id, G.tier(b.id))}"></div>
       <div class="grow"><div class="bname">${b.name} ${st.lvl ? `<span class="tag">Lv ${st.lvl}${b.maxLvl ? '/' + b.maxLvl : ''}</span>` : ''}</div><div class="bsub">${this.utilEffect(b.id)}</div></div>
       ${max ? '<span class="tag">MAX</span>' : `<button class="btn buybtn" data-act="buy" data-id="${b.id}" ${this.b(el => { const c = G.utilCost(b.id); el.className = 'btn buybtn' + (G.s.gold >= c ? '' : ' no') + (G.isConstructing(b.id) ? ' off' : ''); el.innerHTML = `${st.lvl ? 'UPGRADE' : 'BUILD'}<small>${iconImg('coin')}${fmt(c)}</small>`; })}></button>`}
     </div>`;
@@ -242,7 +248,7 @@ export class UI {
     const G = this.G, b = BUILDING_BY_ID[id], st = G.s.buildings[id];
     this.title(b.name);
     this.tabsEl.innerHTML = '';
-    let h = `<div class="row" style="align-items:flex-start"><div class="thumb" style="width:96px;height:96px"><img src="${bThumb(id, b.kind === 'biz' ? G.tier(id) : Math.min(4, Math.floor(st.lvl / 3)))}"></div>
+    let h = `<div class="row" style="align-items:flex-start"><div class="thumb" style="width:96px;height:96px"><img src="${bThumb(id, G.tier(id))}"></div>
       <div class="grow"><p class="small" style="margin-top:0">${b.desc}</p>
       ${st.lvl ? `<span class="tag">Level ${st.lvl}</span> ` : ''}${b.job ? `<span class="tag">${iconImg(JOB_ICON[b.job])} Best job: ${JOBS[b.job].name}</span>` : ''}</div></div>`;
     if (G.s.damaged[id]) h += `<div class="card" style="background:#5a2a2a"><div class="row"><div class="grow">🔥 <b>Damaged!</b> Income halved. Auto-repairs in ${fmtTime((G.s.damaged[id] - G.now()) / 1000)}.</div><button class="btn small" data-act="repair" data-id="${id}">Repair ${iconImg('coin')}${fmt(G.repairCost(id))}</button></div></div>`;
@@ -380,7 +386,7 @@ export class UI {
     const R = RARITIES;
     const L = G.luck();
     let h = `<div class="card center" style="background:linear-gradient(#3a2a4a,#2a1a30)">
-      <img src="${bThumb('cauldron', Math.min(4, Math.floor(G.s.buildings.cauldron.lvl / 3)))}" style="width:130px">
+      <img src="${bThumb('cauldron', G.tier('cauldron'))}" style="width:130px">
       <p class="small">Toss stuff in the Summoning Cauldron. Goblins come out. Nobody knows why.</p>
       ${full ? `<p class="small red-t">Housing full! New Common/Rare goblins will leave (with a tip). Named Epic+ heroes always stay. Upgrade the Mud Huts!</p>` : ''}
       <div class="row" style="margin-top:8px">
@@ -673,10 +679,14 @@ export class UI {
     this.modalKeep = null;
     const cb = this.modalOnClose; this.modalOnClose = null;
     if (cb) cb();
-    if (this.modalQueue.length) { const next = this.modalQueue.shift(); setTimeout(next, 150); }
+    if (this.modalQueue.length && !this.battle.active) { const next = this.modalQueue.shift(); setTimeout(() => this.queueModal(next), 150); }
   }
   queueModal(fn) {
     if (this.modalEl.classList.contains('open') || this.battle.active) this.modalQueue.push(fn); else fn();
+  }
+  flushQueue() {
+    if (this.battle.active || this.modalEl.classList.contains('open') || !this.modalQueue.length) return;
+    const next = this.modalQueue.shift(); next();
   }
   confirm(title, text, yes, onYes, cls = 'red') {
     this.modal(`<h2>${title}</h2><p>${text}</p><div class="modal-actions"><button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn ${cls}" id="m-yes">${yes}</button></div>`);
@@ -761,7 +771,8 @@ export class UI {
     if (lvl === 3) unlocks.push('Goblin incidents & disasters');
     if (lvl === 8) unlocks.push('The Wandering Merchant');
     const rankUp = RANKS.find(r => r[0] === lvl);
-    this.queueModal(() => {
+    // deferred so a recruit/battle screen opened by the same action shows first
+    setTimeout(() => this.queueModal(() => {
       sfx('levelup');
       this.world.confetti(this.world.cam.x, this.world.cam.y - 20, 80);
       this.modal(`<div style="font-size:14px" class="gold-t"><b>CAPITAL LEVEL UP!</b></div><div style="font-size:64px;font-weight:700;line-height:1;color:#e8a020;text-shadow:0 4px 0 #7a4a10">${lvl}</div>
@@ -769,7 +780,7 @@ export class UI {
         <div class="loot"><span>${iconImg('gem')} +${gems}</span><span>${iconImg('shroom')} +${5 * lvl}</span></div>
         ${unlocks.length ? `<h3>Unlocked!</h3>${unlocks.map(u => `<div class="list-item small">✨ ${u}</div>`).join('')}` : ''}
         <div class="modal-actions"><button class="btn gold" data-act="close-modal">Hooray!</button></div>`);
-    });
+    }), 0);
   }
 
   showExpResult(res) {
@@ -835,7 +846,7 @@ export class UI {
     if (!defs.length) { this.toast('Assign defenders at the Barracks first!', 'bad'); this.openTab('explore', 'defense'); return; }
     inv.fighting = true;
     this.closeSheet();
-    this.closeModal();
+    this.modalEl.classList.remove('open');
     this.battle.open({
       title: '⚔️ Defend the Capital!',
       team: defs.map(g => G.goblinCombat(g, true)), enemies: inv.enemies, region: { sky: ['#ffb070', '#ffe0a0'], ground: '#5fa83e', props: 'fences' },
@@ -1040,7 +1051,8 @@ UI.prototype.acts = {
     this.modal(`<h2 style="font-size:18px">Assign ${esc(g.name)}</h2><div style="max-height:55vh;overflow-y:auto;text-align:left">${rows || '<p>No buildings yet!</p>'}</div><div class="modal-actions"><button class="btn ghost" data-act="close-modal">Cancel</button></div>`, { dark: true });
   },
   'assign-to'(el) {
-    const G = this.G, uid = +el.dataset.uid, id = el.dataset.id;
+    const G = this.G, uid = +el.dataset.uid, id = el.dataset.id, g0 = G.gob(uid);
+    if (g0.assign?.t === 'b' && g0.assign.id === id) { this.closeModal(); return; }
     if (G.workers(id).length >= G.workerSlots(id)) {
       // swap out the weakest worker
       const ws = G.workers(id).sort((a, b) => G.workerBonus(a, BUILDING_BY_ID[id]) - G.workerBonus(b, BUILDING_BY_ID[id]));
@@ -1160,7 +1172,7 @@ UI.prototype.acts = {
   'reroll'() { if (this.G.rerollMerchant()) { sfx('coin'); this.rerender(); } else sfx('error'); },
   'buy-offer'(el) {
     const r = this.G.buyOffer(+el.dataset.i);
-    if (r) { sfx('coin'); if (r.uid === undefined && r !== true && typeof r === 'object') this.toast(`Got: <span class="rt r-${r.rarity}">${esc(r.name)}</span>`, 'good'); else if (typeof r === 'string') this.toast('Treasure acquired: ' + TREASURES[r].name, 'good', 'chest'); this.rerender(); }
+    if (r) { sfx('coin'); if (typeof r === 'object' && r.slot) this.toast(`Got: <span class="rt r-${r.rarity}">${esc(r.name)}</span>`, 'good'); else if (typeof r === 'string') this.toast('Treasure acquired: ' + TREASURES[r].name, 'good', 'chest'); this.rerender(); }
     else sfx('error');
   },
   'warp'(el) {

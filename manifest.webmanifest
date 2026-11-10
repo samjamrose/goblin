@@ -1,0 +1,14 @@
+{
+  "name": "Goblin Capital Tycoon",
+  "short_name": "Goblin Tycoon",
+  "description": "Build a ridiculous goblin empire from a muddy camp to a gold-toothed capital.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1c1424",
+  "theme_color": "#1c1424",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

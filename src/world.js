@@ -79,14 +79,39 @@ export class World {
   }
 
   // A* over tiles, roads are cheaper
+  // connected walkable regions, recomputed when the set of open districts changes
+  regions() {
+    const key = Object.keys(this.G.s.districts).sort().join(',');
+    if (this.regKey === key) return this.reg;
+    const reg = new Int32Array(MAP_W * MAP_H).fill(-1);
+    let id = 0;
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+      if (reg[y * MAP_W + x] >= 0 || !this.walkable(x, y)) continue;
+      const q = [[x, y]]; reg[y * MAP_W + x] = id;
+      while (q.length) {
+        const [cx, cy] = q.pop();
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H || reg[ny * MAP_W + nx] >= 0 || !this.walkable(nx, ny)) continue;
+          reg[ny * MAP_W + nx] = id; q.push([nx, ny]);
+        }
+      }
+      id++;
+    }
+    this.regKey = key; this.reg = reg;
+    return reg;
+  }
   findPath(sx, sy, tx, ty) {
     if (!this.walkable(tx, ty)) return null;
+    const reg = this.regions();
+    if (this.walkable(sx, sy) && reg[sy * MAP_W + sx] !== reg[ty * MAP_W + tx]) return null;
     const W = MAP_W, key = (x, y) => y * W + x;
     const open = [[0, sx, sy]], g = new Map([[key(sx, sy), 0]]), from = new Map();
     let iter = 0;
     while (open.length && iter++ < 4000) {
       let bi = 0; for (let i = 1; i < open.length; i++) if (open[i][0] < open[bi][0]) bi = i;
-      const [, x, y] = open.splice(bi, 1)[0];
+      const [f, x, y] = open.splice(bi, 1)[0];
+      if (f - Math.abs(tx - x) - Math.abs(ty - y) > g.get(key(x, y)) + 1e-9) continue; // stale entry
       if (x === tx && y === ty) {
         const path = []; let k = key(x, y);
         while (k !== undefined) { path.push([k % W, Math.floor(k / W)]); k = from.get(k); }
@@ -346,17 +371,6 @@ export class World {
     const [wx, wy] = this.toWorld(sx, sy);
     const G = this.G;
     const hitR = 14 / this.cam.zoom + 6;
-    // bubbles
-    for (const b of G.rt.bubbles) {
-      const [bx, by] = this.bubblePos(b);
-      if (Math.hypot(wx - bx, wy - by) < hitR + 4) {
-        const v = G.popBubble(b.id);
-        this.coinBurst(bx, by, 8, v);
-        this.hooks.sfx('pop');
-        this.hooks.haptic && this.hooks.haptic(8);
-        return;
-      }
-    }
     // golden goblin
     if (this.golden && Math.hypot(wx - this.golden.x, wy - (this.golden.y - 10)) < hitR + 8) {
       const res = G.catchGolden();
@@ -368,6 +382,17 @@ export class World {
       }
       this.golden = null;
       return;
+    }
+    // bubbles
+    for (const b of G.rt.bubbles) {
+      const [bx, by] = this.bubblePos(b);
+      if (Math.hypot(wx - bx, wy - by) < hitR + 4) {
+        const v = G.popBubble(b.id);
+        this.coinBurst(bx, by, 8, v);
+        this.hooks.sfx('pop');
+        this.hooks.haptic && this.hooks.haptic(8);
+        return;
+      }
     }
     // rats
     for (const [id, r] of this.ratsVis) {

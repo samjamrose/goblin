@@ -82,8 +82,8 @@ export const G = {
   },
 
   save() {
-    if (!this.storage) return;
     this.s.lastSave = this.now();
+    if (!this.storage) return;
     try { this.storage.setItem(SAVE_KEY, JSON.stringify(this.s)); this.emit('saved'); } catch (e) { console.warn('save failed', e); }
   },
 
@@ -122,7 +122,11 @@ export const G = {
   rankName(l = this.s.level) { let n = RANKS[0][1]; for (const [lv, name] of RANKS) if (l >= lv) n = name; return n; },
   milestonesReached(lvl) { return MILESTONES.filter(m => lvl >= m).length; },
   nextMilestone(lvl) { return MILESTONES.find(m => lvl < m) || null; },
-  tier(id) { const l = this.s.buildings[id].lvl; return Math.min(4, this.milestonesReached(l)); },
+  tier(id) {
+    const l = this.s.buildings[id].lvl, d = this.def(id);
+    if (d.kind === 'util') return d.maxLvl > 1 ? Math.max(0, Math.min(4, Math.floor((l - 1) * 5 / d.maxLvl))) : 0;
+    return Math.min(4, this.milestonesReached(l));
+  },
   milestoneMult(lvl) {
     let m = 1;
     const mult = { 25: 2, 50: 2, 100: 3, 200: 2, 300: 2, 400: 3, 500: 2, 600: 2, 800: 3, 1000: 4 };
@@ -224,7 +228,7 @@ export const G = {
   },
   incomePerSec(withFrenzy = true) {
     let t = 0;
-    for (const b of BIZ) t += this.buildingIncome(b.id);
+    for (const b of BIZ) t += this.buildingIncome(b.id, withFrenzy);
     if (withFrenzy && this.rt.frenzy > this.now()) t *= 7;
     return t;
   },
@@ -866,6 +870,7 @@ export const G = {
     s.buffs = [];
     for (const g of s.goblins) { if (g.assign && g.assign.t !== 'exp') g.assign = null; g.prev = null; }
     this.rt.bubbles = []; this.rt.fires = []; this.rt.rats = []; this.rt.invasion = null;
+    if (this.merchantOpen()) this.refreshMerchant(true); else s.merchant = null;
     this.emit('prestige', gain);
     this.save();
     return gain;
@@ -1098,10 +1103,12 @@ export const G = {
     // simple resource exchange at the market
     const s = this.s;
     const inc = Math.max(5, this.incomePerSec(false));
-    if (kind === 'ore2gold') { const n = Math.min(s.ore, 50); if (n < 1) return false; s.ore -= n; this.addGold(n * inc * 4); }
-    else if (kind === 'mush2gold') { const n = Math.min(s.mushrooms, 100); if (n < 1) return false; s.mushrooms -= n; this.addGold(n * inc * 1.2); }
-    else if (kind === 'gold2ore') { const c = inc * 120; if (!this.spend('gold', c)) return false; s.ore += Math.floor(20 + s.level * 3); }
-    else if (kind === 'gold2mush') { const c = inc * 90; if (!this.spend('gold', c)) return false; s.mushrooms += Math.floor(40 + s.level * 8); }
+    // buy price = 2.5x the sell price, so round trips always lose gold
+    const oreN = Math.floor(20 + s.level * 3), mushN = Math.floor(40 + s.level * 8);
+    if (kind === 'ore2gold') { const n = Math.min(s.ore, 50); if (n < 1) return false; s.ore -= n; this.addGold(n * inc * 1.5, false); }
+    else if (kind === 'mush2gold') { const n = Math.min(s.mushrooms, 100); if (n < 1) return false; s.mushrooms -= n; this.addGold(n * inc * 0.5, false); }
+    else if (kind === 'gold2ore') { const c = oreN * inc * 1.5 * 2.5; if (!this.spend('gold', c)) return false; s.ore += oreN; }
+    else if (kind === 'gold2mush') { const c = mushN * inc * 0.5 * 2.5; if (!this.spend('gold', c)) return false; s.mushrooms += mushN; }
     s.stats.trades++;
     return true;
   },
@@ -1110,7 +1117,7 @@ export const G = {
   checkDaily() {
     const s = this.s; const today = dayKey(this.now());
     if (s.daily.day === today) return false;
-    const yest = dayKey(this.now() - 86400e3);
+    const d0 = new Date(this.now()); const yest = dayKey(new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() - 1, 12).getTime());
     s.daily.streak = s.daily.lastLogin === yest ? s.daily.streak + 1 : 1;
     s.daily.lastLogin = today;
     s.daily.day = today;
@@ -1127,6 +1134,7 @@ export const G = {
   },
   dailyProgress(q) {
     const t = DAILY_TEMPLATES.find(x => x.id === q.id);
+    if (!t) return 0;
     return Math.min(q.n, (this.s.stats[t.stat] || 0) - q.base);
   },
   claimDaily(i) {
@@ -1231,13 +1239,16 @@ export const G = {
     const s = this.s;
     const now = this.now();
     const away = Math.max(0, (now - s.lastSave) / 1000);
-    if (away < 30) { s.lastTick = now; return null; }
+    if (away < 30) { s.lastTick = now; s.lastSave = now; return null; }
     const dt = Math.min(away, this.offlineCapHours() * 3600);
     const saveFrenzy = this.rt.frenzy; this.rt.frenzy = 0;
     const gold = this.incomePerSec(false) * dt * this.offlineMult();
     const mush = this.mushroomRate() * dt * this.offlineMult();
     const ore = this.oreRate() * dt * this.offlineMult();
     this.rt.frenzy = saveFrenzy;
+    s.lastSave = now;
+    // don't let every timed event fire at once on return
+    for (const k in s.timers) if (s.timers[k] < now) s.timers[k] = now + 20e3 + Math.random() * 60e3;
     this.addGold(gold);
     s.mushrooms += mush; s.ore += ore;
     s.lastTick = now;
