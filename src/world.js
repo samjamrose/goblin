@@ -846,6 +846,7 @@ export class World {
       if (p.type === 'coin') { ctx.drawImage(iconCanvas('coin'), p.x - 3, p.y - 3, 7, 7); }
       else if (p.type === 'spark') { ctx.globalAlpha = k; ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 2, 2); ctx.globalAlpha = 1; }
       else if (p.type === 'conf') { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, Math.abs(Math.cos(p.rot)) * 3 + 1, 2); }
+      else if (p.type === 'note') { ctx.globalAlpha = k; ctx.fillStyle = p.color; const nx = Math.round(p.x + Math.sin(p.t * 3) * 2), ny = Math.round(p.y); ctx.fillRect(nx, ny, 2, 2); ctx.fillRect(nx + 1, ny - 4, 1, 4); ctx.fillRect(nx + 2, ny - 4, 1, 1); ctx.globalAlpha = 1; }
       else if (p.type === 'puff') { ctx.globalAlpha = k * 0.8; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
     }
     // night
@@ -1066,6 +1067,7 @@ export class World {
     ctx.filter = 'none';
     if (this.flash[b.id]) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = this.flash[b.id]; ctx.drawImage(spr, -spr.width / 2, -spr.height); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
     ctx.restore();
+    if (b.id === 'dj') this.drawDJ(x, yb, spr.width);
     // casino lights blink
     if (b.id === 'casino' && Math.floor(this.time * 3) % 2) { ctx.fillStyle = '#ffe060'; ctx.fillRect(x + b.w * 8 - 1, yb - spr.height + 7, 2, 2); }
   }
@@ -1121,6 +1123,28 @@ export class World {
     if (a.state === 'work' && f === 7 && Math.random() < 0.04) this.particles.push({ type: 'spark', x: a.x + a.dir * 9, y: a.y - 5, vx: a.dir * 20, vy: -20, t: 0, life: 0.3, color: '#fff' });
   }
 
+  drawDJ(x, yb, W) {
+    const ctx = this.ctx, G = this.G;
+    const look = { skin: '#7dcc52', hat: 'headphones', outfit: '#3a2a6a', tool: 'dice', ears: 2, nose: 1, eyes: 0, teeth: 2, extra: 'glasses' };
+    const sh = goblinSheet(look);
+    const playing = G.s.settings.music;
+    const beat = playing ? this.time * 2.2 : this.time * 0.5;
+    const bob = Math.round(Math.abs(Math.sin(beat * Math.PI)) * -2);
+    const f = playing && Math.floor(beat) % 4 === 3 ? 8 : (Math.floor(this.time * 0.7) % 5 === 0 ? 1 : 0);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, yb - 60, W, 60 - 17); ctx.clip();
+    ctx.drawImage(sh.sheet, f * GOB_W, 0, GOB_W, GOB_H, Math.round(x + W / 2 - GOB_W / 2), yb - 17 - 19 + bob, GOB_W, GOB_H);
+    ctx.restore();
+    // spinning records
+    const a = this.time * 6;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(Math.round(x + 12 + Math.cos(a) * 2), Math.round(yb - 18 + Math.sin(a) * 0.6), 1, 1);
+    ctx.fillRect(Math.round(x + W - 12 + Math.cos(-a) * 2), Math.round(yb - 18 + Math.sin(-a) * 0.6), 1, 1);
+    // blinking stage lights
+    const cols = ['#ff5aa0', '#5ac0ff', '#ffe060', '#7aff6a'];
+    if (playing) for (let i = 0; i < 4; i++) if ((Math.floor(beat) + i) % 2) { ctx.globalAlpha = 0.25; ctx.fillStyle = cols[i]; ctx.beginPath(); ctx.moveTo(x + 5 + i * 7, yb - 31); ctx.lineTo(x + i * 7, yb - 9); ctx.lineTo(x + 10 + i * 7, yb - 9); ctx.fill(); ctx.globalAlpha = 1; }
+    if (playing && Math.random() < 0.03) this.particles.push({ type: 'note', x: x + W / 2 + (Math.random() - 0.5) * 16, y: yb - 38, vx: (Math.random() - 0.5) * 8, vy: -10, t: 0, life: 2.2, color: cols[Math.floor(Math.random() * 4)] });
+  }
   drawRat(r) {
     const ctx = this.ctx;
     const x = Math.round(r.x), y = Math.round(r.y), d = r.dir || 1;

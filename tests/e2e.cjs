@@ -205,6 +205,21 @@ const SHOTS = process.env.SHOTS || null;
     const f2 = await ev((uid) => window.__game.G.hpFrac(window.__game.G.gob(uid)), r.uid);
     check(f2 > 0.5 && f2 < 0.6, 'health slowly recovers in town (' + f2.toFixed(3) + ')');
   }
+  // ---- DJ stand: tracks unlock with progress and can be played
+  await ev(() => { window.__game.ui.openTab('build'); window.__game.ui.show({ tab: 'building', param: 'dj' }, true); });
+  await wait(300);
+  check(await p.locator('.sheet-body .list-item').count() === 7, 'DJ stand lists 7 tracks');
+  check(await ev(() => window.__game.G.s.tracks.moonrise === true), 'level 5 unlocked Mushroom Moonrise');
+  check(await ev(() => !window.__game.G.s.tracks.gobtopia), 'final track still locked');
+  await p.click('.sheet-body [data-act=play-track][data-id=moonrise]');
+  await wait(200);
+  check(await ev(() => window.__game.G.s.settings.track) === 'moonrise', 'picked track is saved');
+  await shot('dj');
+  await ev(() => window.__game.ui.closeSheet());
+  await ev(() => { const w = window.__game.world, p = window.__game.G.pos('dj'); w.cam.zoom = 3; w.focus((p.tx + 1) * 16, (p.ty + 1) * 16, false); });
+  await wait(600);
+  await shot('dj-map');
+
   // ---- injuries & infirmary
   await ev(() => window.__game.ui.closeSheet());
   const team = await ev(() => window.__game.G.battleTeam().map(g => g.uid));
@@ -281,7 +296,8 @@ const SHOTS = process.env.SHOTS || null;
   if (fireBid) {
     const pos = await ev((bid) => { const w = window.__game.world, d = window.__game.G.def(bid); return w.toScreen((d.tx + d.w / 2) * 16, (d.ty + d.h / 2) * 16); }, fireBid);
     for (let i = 0; i < 3; i++) { await p.mouse.click(pos[0], pos[1]); await wait(80); }
-    check(await ev(() => window.__game.G.s.stats.fires) >= 1, 'fire extinguished');
+    const fdiag = await ev(([x, y, bid]) => { const e = document.elementFromPoint(x, y); return (e && (e.id || e.className)) + ' ' + bid + ' fires=' + window.__game.G.rt.fires.map(f => f.bid + ':' + f.hp).join(','); }, [pos[0], pos[1], fireBid]);
+    check(await ev(() => window.__game.G.s.stats.fires) >= 1, 'fire extinguished ' + fdiag);
   } else check(false, 'fire spawned');
   await ev(() => { window.__game.G.rt.fires = []; });
 

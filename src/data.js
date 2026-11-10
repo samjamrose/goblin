@@ -158,6 +158,9 @@ export const BUILDINGS = [
   { id: 'infirmary', name: 'Goblin Infirmary', kind: 'util', job: 'medic', district: 'muck', tx: 30, ty: 30, w: 3, h: 3,
     baseCost: 400, growth: 4, upCost: 4000, unlock: 4, maxLvl: 6,
     desc: 'Bonked goblins heal here (2 min each). Each medic heals one goblin at a time. Each level adds a medic bed. Comes with one medic; more must be earned.' },
+  { id: 'dj', name: 'DJ Stand', kind: 'util', job: null, district: 'muck', tx: 25, ty: 25, w: 2, h: 2,
+    baseCost: 0, growth: 1, upCost: 0, unlock: 1, maxLvl: 1, startBuilt: true,
+    desc: 'DJ Wubgob spins the town\'s music. Unlock new tracks by reaching milestones and beating bosses.' },
   { id: 'tower', name: 'Squint Tower', kind: 'util', job: 'scout', district: 'shady', tx: 14, ty: 18, w: 3, h: 3,
     baseCost: 5e7, growth: 2.5, upCost: 5e7, unlock: 12, maxLvl: 20,
     desc: 'Lookouts spot invaders early. Each level: +10% defense HP and +5% golden goblin rate.' },
@@ -686,6 +689,17 @@ export const RIVAL_NAMES = [
 
 export const LOGIN_REWARDS = [
   { gems: 10 }, { mushrooms: 100 }, { gems: 20 }, { ore: 100 }, { gems: 30 }, { mushrooms: 300 }, { gems: 60, ticket: 1 },
+];
+
+// Town music tracks at the DJ Stand and how to unlock them (the last three are very hard)
+export const TRACK_UNLOCKS = [
+  { id: 'mudlight', need: 'Always playing', check: () => true },
+  { id: 'moonrise', need: 'Reach Capital Level 5', check: (s) => s.level >= 5 },
+  { id: 'tavern', need: 'Defeat Old Barkbeard (Whispering Woods boss)', check: (s) => (s.regions.woods?.stage || 0) >= 10 },
+  { id: 'minegroove', need: 'Reach Capital Level 15', check: (s) => s.level >= 15 },
+  { id: 'frostfang', need: 'Defeat Yeti Grandma (Frostfang Mountains boss)', check: (s) => (s.regions.frostfang?.stage || 0) >= 10 },
+  { id: 'dragonhoard', need: 'Defeat Vorgath the Hoarder, the final dragon', check: (s) => (s.regions.ember?.stage || 0) >= 10 },
+  { id: 'gobtopia', need: 'Reach Capital Level 50 after packing up the capital 3 times', check: (s) => s.level >= 50 && s.stats.prestiges >= 3 },
 ];
 
 export const MERCHANT_NAMES = ['Gribble the Wandering Trader'];

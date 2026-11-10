@@ -2,11 +2,11 @@
 import {
   RARITIES, JOBS, TRAITS, BUILDINGS, BUILDING_BY_ID, BIZ, DISTRICTS, DISTRICT_BY_ID, REGIONS, REGION_BY_ID, STAGES_PER_REGION,
   MISSIONS, TREASURES, TREASURE_SETS, RESEARCH, PERKS, NAMED, NAMED_BY_ID, ABILITY_TEXT, DAILY_TEMPLATES, STORY, ACHIEVEMENTS,
-  LOGIN_REWARDS, PRESTIGE_MIN_GOLD, xpForLevel, ENEMIES, MILESTONES, RANKS, TILE,
+  LOGIN_REWARDS, PRESTIGE_MIN_GOLD, xpForLevel, ENEMIES, MILESTONES, RANKS, TILE, TRACK_UNLOCKS,
 } from './data.js';
 import { fmt, fmtTime, clamp, pct } from './util.js';
 import { icon, iconImg, goblinPortrait, buildingSprite, enemySprite, makeCanvas, GOB_W, GOB_H, goblinSheet } from './sprites.js';
-import { sfx, setSfx, setMusic, unlockAudio } from './audio.js';
+import { sfx, setSfx, setMusic, unlockAudio, TRACKS, setTownTrack } from './audio.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -211,6 +211,7 @@ export class UI {
       case 'lodge': return l ? `${G.expSlots()} expedition slot(s), +${(l - 1) * 10}% loot` : 'Unlocks Expeditions';
       case 'research': return l ? `${Object.keys(G.s.research).length}/${RESEARCH.length} researched` : 'Unlocks Research';
       case 'barracks': return l ? `${G.defenderSlots()} defender slots · +${l * 15}% defense` : 'Defend against invasions';
+      case 'dj': return `Now playing: ${TRACKS[G.s.settings.track]?.name || 'Mudlight Serenade'} · ${Object.keys(G.s.tracks || {}).length}/7 tracks`;
       case 'infirmary': return l ? `${G.medics().length} medic(s) on duty · ${G.injured().length} patient(s)` : 'Heals goblins injured in battle';
       case 'tower': return l ? `+${l * 10}% defense HP · +${l * 5}% golden goblins` : 'Spot invaders, attract gold';
     }
@@ -305,6 +306,7 @@ export class UI {
     if (!st.lvl) return h;
     h += this.moveBtn(id);
     if (id === 'infirmary') h += this.infirmaryHtml();
+    if (id === 'dj') h += this.djHtml();
     if (id === 'cauldron') h += `<div style="margin-top:10px"><button class="btn purple wide" data-act="tab" data-tab="goblins" data-sub="recruit">${iconImg('goblin')} Recruit Goblins</button></div>`;
     if (id === 'lodge') h += `<div style="margin-top:10px"><button class="btn blue wide" data-act="tab" data-tab="explore" data-sub="exped">${iconImg('map')} Plan Expeditions</button></div>`;
     if (id === 'research') h += `<div style="margin-top:10px"><button class="btn blue wide" data-act="tab" data-tab="build" data-sub="research">${iconImg('flask')} Open Research</button></div>`;
@@ -341,6 +343,21 @@ export class UI {
       else { sfx('error'); this.toast('Not enough gold!', 'bad', 'coin'); return; }
       end();
     };
+  }
+  djHtml() {
+    const G = this.G, s = G.s, cur = s.settings.track || 'mudlight';
+    let h = `<div class="card row" style="background:linear-gradient(#3a2a6a,#1c1424)"><img src="${goblinPortrait({ skin: '#7dcc52', hat: 'headphones', outfit: '#3a2a6a', tool: 'dice', ears: 2, nose: 1, eyes: 0, teeth: 2, extra: 'glasses' }, 2)}" style="width:52px"><div class="grow small"><b>DJ Wubgob</b><br><i>"Yo yo yo! Pick a track, boss. I only play bangers. And one sad song."</i></div></div>`;
+    if (!s.settings.music) h += `<div class="card paper small center">Music is off. <button class="btn tiny" data-act="toggle" data-k="music">Turn music on</button></div>`;
+    h += `<h3>Town Tracks (${Object.keys(s.tracks || {}).length}/7)</h3>`;
+    TRACK_UNLOCKS.forEach((u, i) => {
+      const T = TRACKS[u.id], has = s.tracks && s.tracks[u.id], on = cur === u.id;
+      const hard = T.hard ? ' <span class="tag" style="color:var(--mythical)">LEGENDARY</span>' : '';
+      h += `<div class="list-item ${has ? '' : 'done'}" ${on ? 'style="box-shadow:0 0 0 2px var(--gold)"' : ''}>${iconImg(has ? 'music' : 'lock', 'ic b')}
+        <div class="grow"><b class="small">${i + 1}. ${has ? T.name : '???'}${hard}</b><div class="small muted">${has ? T.mood : '🔒 ' + u.need}</div></div>
+        ${has ? (on ? '<span class="tag green-t">♪ PLAYING</span>' : `<button class="btn tiny" data-act="play-track" data-id="${u.id}">Play</button>`) : ''}</div>`;
+    });
+    h += `<p class="small muted">Battles have their own music, and bosses get something even louder.</p>`;
+    return h;
   }
   moveBtn(id) { return `<div style="margin-top:10px"><button class="btn small ghost" data-act="move" data-id="${id}">${iconImg('hammer')} Move building</button></div>`; }
   injuredHtml(list) {
@@ -901,6 +918,7 @@ export class UI {
     if (!team.length) { this.toast(G.injured().length ? 'Your fighters are healing at the Infirmary!' : 'No goblins available to fight!', 'bad', 'heart'); return; }
     this.closeSheet();
     this.battle.open({
+      music: stage >= STAGES_PER_REGION ? 'boss' : 'battle',
       title: `${R.name} · ${stage >= STAGES_PER_REGION ? 'BOSS' : 'Stage ' + stage}`,
       team: team.map(g => G.goblinCombat(g)), enemies: G.battleSetup(regionId, stage), region: R,
       bombMult: 1 + G.researchSum('bomb'),
@@ -931,6 +949,7 @@ export class UI {
     this.closeSheet();
     this.modalEl.classList.remove('open');
     this.battle.open({
+      music: 'battle',
       title: '⚔️ Defend the Capital!',
       team: defs.map(g => G.goblinCombat(g, true)), enemies: inv.enemies, region: { sky: ['#ffb070', '#ffe0a0'], ground: '#5fa83e', props: 'fences' },
       bombMult: 1 + G.researchSum('bomb'),
@@ -1130,6 +1149,16 @@ UI.prototype.acts = {
       sortBy: (x, y) => G.workerBonus(y, b) - G.workerBonus(x, b) || (!!x.assign - !!y.assign),
       onDone: ([uid]) => { G.assign(uid, { t: 'b', id }); sfx('gob'); this.rerender(); },
     });
+  },
+  'play-track'(el) {
+    const id = el.dataset.id;
+    if (!this.G.s.tracks || !this.G.s.tracks[id]) return;
+    this.G.s.settings.track = id;
+    if (!this.G.s.settings.music) { this.G.s.settings.music = true; setMusic(true); }
+    setTownTrack(id);
+    unlockAudio();
+    this.toast(`DJ Wubgob: "Now spinning ${TRACKS[id].name}!"`, 'good', 'music');
+    this.rerender();
   },
   'move'(el) { this.startPlacement(el.dataset.id, 'move'); },
   'assign-med'() {

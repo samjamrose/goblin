@@ -5,7 +5,7 @@ import {
   REGIONS, REGION_BY_ID, STAGES_PER_REGION, MISSIONS, TREASURES, TREASURE_SETS, RESEARCH, RESEARCH_BY_ID,
   PERKS, PERK_BY_ID, PRESTIGE_MIN_GOLD, teethFor, ITEM_WEAPONS, ITEM_TRINKETS, ITEM_ADJ, ITEM_OF, FUNNY_EVENTS,
   AMBIENT_EVENTS, DAILY_TEMPLATES, STORY, ACHIEVEMENTS, RIVAL_NAMES, LOGIN_REWARDS, ENEMIES,
-  MAP_W, MAP_H, ROADS, DECOR, DECOR_SIZE, HEAL_MS, MEDIC_NAMES, RECOVER_MS,
+  MAP_W, MAP_H, ROADS, DECOR, DECOR_SIZE, HEAL_MS, MEDIC_NAMES, RECOVER_MS, TRACK_UNLOCKS,
 } from './data.js';
 import { rng, pick, ri, clamp, weighted, dayKey, weekKey, hashStr, fmt, shuffle } from './util.js';
 import { enemyTeam, resolveInstant } from './battlesim.js';
@@ -44,8 +44,8 @@ export const G = {
       buffs: [], damaged: {},
       timers: { golden: now + 90e3, event: now + 150e3, invasion: now + 600e3, disaster: now + 300e3, bubble: now + 5e3, ambient: now + 20e3 },
       merchant: null, pity: { basic: 0, premium: 0 },
-      settings: { sound: true, music: true, haptics: true },
-      tut: {}, forgeCount: 0, invasionsSeen: 0, place: {}, firstMedic: false, medicsEarned: 0, mig2: true,
+      settings: { sound: true, music: true, haptics: true, track: 'mudlight' },
+      tut: {}, forgeCount: 0, invasionsSeen: 0, place: {}, firstMedic: false, medicsEarned: 0, mig2: true, tracks: { mudlight: true },
     };
     for (const b of BUILDINGS) s.buildings[b.id] = { lvl: b.startBuilt ? 1 : 0, built: 0 };
     this.s = s;
@@ -65,6 +65,7 @@ export const G = {
     } catch (e) { console.warn('Save load failed', e); }
     if (loaded && loaded.v === 1) {
       this.s = this.migrate(loaded);
+      this.fixDjSpot();
       return this.applyOffline();
     }
     this.newState();
@@ -109,6 +110,7 @@ export const G = {
       const s = JSON.parse(json);
       if (!s || s.v !== 1 || !s.buildings) throw new Error('bad');
       this.s = this.migrate(s);
+      this.fixDjSpot();
       this.save();
       try { this.storage && this.storage.setItem('gct_keep_local', '1'); } catch (e) { }
       return true;
@@ -1020,12 +1022,12 @@ export const G = {
     s.gold = 10 + hs; s.mushrooms = Math.max(50, s.mushrooms * 0.1); s.ore = Math.min(s.ore, 100);
     s.runGold = 0; s.xp = 0; s.level = 1;
     for (const b of BUILDINGS) {
-      if (b.id === 'huts' || b.id === 'cauldron' || b.id === 'infirmary') continue;
+      if (b.id === 'huts' || b.id === 'cauldron' || b.id === 'infirmary' || b.id === 'dj') continue;
       s.buildings[b.id] = { lvl: b.startBuilt ? 1 : 0, built: 0 };
       delete s.place[b.id];
     }
     s.districts = { muck: true };
-    for (const id of ['huts', 'cauldron', 'infirmary']) {
+    for (const id of ['huts', 'cauldron', 'infirmary', 'dj']) {
       const p = s.place[id]; if (!p) continue;
       const d = this.def(id); let ok = true;
       for (let y = p.ty; y <= p.ty + d.h; y++) for (let x = p.tx; x < p.tx + d.w; x++) if (!this.tileOpen(x, y)) ok = false;
@@ -1507,7 +1509,23 @@ export const G = {
     s.lastTick = now;
   },
 
+  checkTracks() {
+    const s = this.s; s.tracks = s.tracks || { mudlight: true };
+    for (const t of TRACK_UNLOCKS) if (!s.tracks[t.id] && t.check(s)) { s.tracks[t.id] = true; this.emit('trackUnlocked', t.id); }
+  },
+  // the DJ stand is new in an update: if a player's own building sits on its spot, find it another
+  fixDjSpot() {
+    const p = this.pos('dj');
+    for (const b of this.posAll()) {
+      if (b.id === 'dj' || this.s.buildings[b.id].lvl <= 0) continue;
+      if (p.tx < b.tx + b.w && p.tx + p.w > b.tx && p.ty < b.ty + b.h && p.ty + p.h > b.ty) {
+        const sp = this.findSpot('dj', 25, 25); if (sp) this.setPlace('dj', sp.tx, sp.ty);
+        return;
+      }
+    }
+  },
   slowTick() {
+    this.checkTracks();
     this.checkAchievements();
     this.checkDaily();
     this.checkLeague();

@@ -54,10 +54,12 @@ export class BattleScreen {
     place(gs, 'g'); place(es, 'e');
     for (const u of this.b.units) { u.ox = 0; u.oy = 0; u.flash = 0; u.dead = 0; }
     this.hooks.sfx('battle');
+    this.hooks.music && this.hooks.music(cfg.music || 'battle');
   }
 
   close() {
     this.active = false;
+    this.hooks.music && this.hooks.music('town');
     this.root.classList.remove('show');
   }
 

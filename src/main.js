@@ -3,7 +3,7 @@ import { G } from './game.js';
 import { World } from './world.js';
 import { BattleScreen } from './battle.js';
 import { UI } from './ui.js';
-import { sfx, setSfx, setMusic, unlockAudio } from './audio.js';
+import { sfx, setSfx, setMusic, unlockAudio, setTownTrack, setMusicMode, TRACKS } from './audio.js';
 import { createCloud } from './cloud.js';
 import { BUILDING_BY_ID, TILE, TREASURES, REGION_BY_ID } from './data.js';
 import { fmt } from './util.js';
@@ -18,6 +18,8 @@ async function boot() {
   const offline = G.init(store);
   setSfx(G.s.settings.sound);
   setMusic(G.s.settings.music);
+  G.checkTracks();
+  setTownTrack(G.s.tracks && G.s.tracks[G.s.settings.track] ? G.s.settings.track : 'mudlight');
 
   let ui;
   const world = new World(document.getElementById('world'), G, {
@@ -27,16 +29,17 @@ async function boot() {
     onDistrict: (id) => { ui.openTab('build', 'districts'); },
     onBuilt: (id) => { sfx('built'); },
   });
-  const battle = new BattleScreen(document.getElementById('battle'), { sfx, haptic });
+  const battle = new BattleScreen(document.getElementById('battle'), { sfx, haptic, music: setMusicMode });
   ui = new UI(G, world, battle);
   ui.init();
   // ---------------- cloud save (claude.ai): survives updates, app restarts and devices
   const cloud = createCloud(G, (remote) => {
     G.s = G.migrate(remote);
+    G.fixDjSpot();
     G.save();
     const off = G.applyOffline();
     world.buildGrid(); world.agents.clear(); world.terrainDirty = true;
-    setSfx(G.s.settings.sound); setMusic(G.s.settings.music);
+    setSfx(G.s.settings.sound); setMusic(G.s.settings.music); setTownTrack(G.s.settings.track || 'mudlight');
     ui.modalQueue = []; ui.closeModal(); ui.closeSheet();
     ui.toast(`☁️ Loaded your saved capital: ${G.s.name}`, 'good', 'house');
     if (off) ui.showOffline(off);
@@ -85,6 +88,7 @@ async function boot() {
   G.on('item', () => { });
   G.on('repaired', (id) => { });
   G.on('medic', (g, src) => { sfx('achieve'); ui.toast(src === 'infirmary' ? `🩺 ${g.name} reports for duty at the Infirmary!` : `🩺 New medic earned: ${g.name}!`, 'good', 'heart'); });
+  G.on('trackUnlocked', (id) => { sfx('achieve'); ui.toast(`🎵 New track at the DJ Stand: ${TRACKS[id].name}!`, 'ach', 'music'); });
   G.on('medicGems', (n) => ui.toast(`Your infirmary is fully staffed: a medic reward became ${n} gems!`, 'good', 'gem'));
   G.on('healed', (g) => { if (!battle.active) ui.toast(`${g.name} is healed and back to work!`, 'good', 'heart'); });
   G.on('placed', () => { world.terrainDirty = true; });

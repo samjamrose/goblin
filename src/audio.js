@@ -95,40 +95,102 @@ export function setMusic(on) {
   if (!on) stopMusic();
 }
 
-// --- Chill retro-fantasy soundtrack -------------------------------------------
-// Slow modal chord loop (D dorian / F lydian colours) with soft pads, a gentle
-// plucked arpeggio, a breathy "flute" lead, warm bass and a touch of echo + reverb.
-const BPM = 72, EIGHTH = 60 / BPM / 2;
+// --- Music: a small sequencer that plays any of the track definitions below ----
 const N = (m) => 440 * Math.pow(2, (m - 69) / 12); // midi -> Hz
-// 4-bar progressions (midi chord tones), chosen per 8-bar section
-const PROGS = [
-  [[50, 57, 60, 65], [46, 53, 57, 62], [41, 48, 57, 64], [48, 55, 59, 64]],   // Dm9 - Bbmaj7 - Fmaj9 - C(add9)
-  [[50, 57, 60, 64], [43, 50, 57, 59], [45, 52, 55, 60], [46, 53, 57, 60]],   // Dm - G9 - Am7 - Bbmaj7
-  [[41, 48, 55, 64], [43, 50, 57, 59], [45, 52, 57, 60], [43, 50, 55, 62]],   // Fmaj7 - G6 - Am - Gsus
-];
-const MELODY_SCALE = [62, 64, 65, 67, 69, 72, 74, 76, 77, 79]; // D dorian, upper register
+const P = (str) => str.split('').map(c => c === 'x'); // drum pattern string -> booleans
 let fx = null;
+
+// Each track: bpm, sub (2 = eighth steps, 4 = sixteenth steps), chord progressions (4 bars, midi),
+// melody scale, and layers. Bass/arp patterns have one entry per step (null = rest).
+export const TRACKS = {
+  mudlight: { name: 'Mudlight Serenade', mood: 'Chill campfire tune', bpm: 72, sub: 2,
+    progs: [[[50, 57, 60, 65], [46, 53, 57, 62], [41, 48, 57, 64], [48, 55, 59, 64]], [[50, 57, 60, 64], [43, 50, 57, 59], [45, 52, 55, 60], [46, 53, 57, 60]]],
+    scale: [62, 64, 65, 67, 69, 72, 74, 76, 77, 79],
+    pad: { vol: 0.028 }, bass: { pattern: [0, null, null, null, 7, null, null, null], vol: 0.1 },
+    arp: { pattern: [0, 1, 2, 3, 2, 1, 2, 3], vol: 0.018, type: 'square', oct: 12, filter: 1500 },
+    lead: { vol: 0.06, type: 'sine', vibrato: 4, every: 2, rest: 0.38 },
+    drums: { kick: P('x.......'), hat: P('.x.x.x.x'), kickVol: 0.012, hatVol: 0.006 }, chime: true },
+  moonrise: { name: 'Mushroom Moonrise', mood: 'Dreamy music box under the stars', bpm: 64, sub: 2,
+    progs: [[[41, 53, 57, 64], [43, 53, 59, 62], [40, 52, 55, 62], [45, 52, 57, 60]]],
+    scale: [72, 74, 76, 77, 79, 81, 83, 84, 86, 88],
+    pad: { vol: 0.03, type: 'sine' }, bass: { pattern: [0, null, null, null, null, null, null, null], vol: 0.08 },
+    arp: { pattern: [0, 2, 3, 1, 3, 2, 3, 1], vol: 0.03, type: 'triangle', oct: 24, release: 0.9 },
+    lead: { vol: 0.045, type: 'triangle', vibrato: 2, every: 2, rest: 0.5 },
+    drums: { hat: P('...x...x'), hatVol: 0.004 }, chime: true },
+  tavern: { name: 'Tavern Twilight', mood: 'Bouncy jig with a recorder', bpm: 104, sub: 2,
+    progs: [[[45, 57, 60, 64], [43, 55, 59, 62], [41, 53, 57, 60], [40, 52, 56, 59]], [[45, 57, 60, 64], [48, 55, 60, 64], [43, 55, 59, 62], [40, 52, 56, 59]]],
+    scale: [69, 71, 72, 74, 76, 77, 79, 81, 83, 84],
+    pad: null, bass: { pattern: [0, null, 7, null, 0, null, 7, null], vol: 0.09 },
+    arp: { pattern: [1, 2, 3, 2, 1, 2, 3, 2], vol: 0.026, type: 'square', oct: 12, filter: 2200, release: 0.15 },
+    lead: { vol: 0.055, type: 'sine', vibrato: 3, every: 1, rest: 0.25 },
+    drums: { kick: P('x...x...'), hat: P('..x...x.'), kickVol: 0.02, hatVol: 0.012 } },
+  minegroove: { name: 'Gold Mine Groove', mood: 'Lo-fi beats to dig gold to', bpm: 82, sub: 4,
+    progs: [[[40, 55, 59, 62], [36, 55, 59, 64], [45, 55, 60, 64], [47, 54, 57, 63]]],
+    scale: [64, 67, 69, 71, 74, 76, 79, 81],
+    pad: { vol: 0.03, type: 'triangle', filter: 1100 },
+    bass: { pattern: [0, null, null, null, null, null, 0, null, null, null, 7, null, null, null, null, null], vol: 0.12, type: 'sine' },
+    arp: null, lead: { vol: 0.05, type: 'triangle', vibrato: 1, every: 2, rest: 0.5 },
+    drums: { kick: P('x.....x...x.....'), snare: P('....x.......x...'), hat: P('x.x.x.x.x.x.x.xx'), kickVol: 0.05, snareVol: 0.03, hatVol: 0.008 } },
+  frostfang: { name: 'Frostfang Echoes', mood: 'Icy bells on a silent mountain', bpm: 58, sub: 2, hard: true,
+    progs: [[[40, 55, 59, 64], [36, 55, 60, 64], [43, 55, 59, 62], [38, 54, 57, 62]]],
+    scale: [76, 78, 79, 81, 83, 86, 88, 90, 91],
+    pad: { vol: 0.034, type: 'sine', attack: 1.6 }, bass: { pattern: [0, null, null, null, null, null, null, null], vol: 0.07 },
+    arp: { pattern: [3, null, 2, null, 1, null, 2, null], vol: 0.035, type: 'sine', oct: 24, release: 1.6 },
+    lead: { vol: 0.04, type: 'sine', vibrato: 5, every: 2, rest: 0.55 }, drums: null, chime: true, wet: 0.6 },
+  dragonhoard: { name: 'Hoard of the Dragon', mood: 'Epic march over a mountain of gold', bpm: 100, sub: 4, hard: true,
+    progs: [[[38, 50, 53, 57], [34, 50, 53, 58], [43, 50, 55, 58], [45, 49, 52, 57]]],
+    scale: [62, 64, 65, 67, 69, 70, 73, 74, 76, 77],
+    pad: { vol: 0.03, type: 'sawtooth', filter: 900 },
+    bass: { pattern: [0, null, 0, null, 0, null, 0, 0, 0, null, 0, null, 7, null, 5, null], vol: 0.08, type: 'triangle' },
+    arp: null, lead: { vol: 0.05, type: 'square', vibrato: 3, every: 1, rest: 0.3, filter: 2400 },
+    drums: { kick: P('x.......x.x.....'), snare: P('....x.......x..x'), hat: P('..x...x...x...x.'), tom: P('..............xx'), kickVol: 0.06, snareVol: 0.03, hatVol: 0.008 } },
+  gobtopia: { name: 'Eternal Gobtopia', mood: 'The triumphant anthem of a goblin empire', bpm: 90, sub: 4, hard: true,
+    progs: [[[48, 55, 64, 67], [50, 57, 62, 66], [52, 55, 59, 64], [53, 57, 60, 65]], [[53, 57, 60, 65], [55, 59, 62, 67], [52, 55, 60, 64], [48, 55, 64, 67]]],
+    scale: [67, 69, 71, 72, 74, 76, 78, 79, 81, 83, 84],
+    pad: { vol: 0.03, type: 'triangle', filter: 1800 },
+    bass: { pattern: [0, null, null, 12, null, null, 7, null, 0, null, null, 12, null, 7, null, null], vol: 0.09 },
+    arp: { pattern: [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3], vol: 0.015, type: 'square', oct: 12, filter: 2000 },
+    lead: { vol: 0.055, type: 'square', vibrato: 3, every: 1, rest: 0.3, filter: 2600 },
+    drums: { kick: P('x...x...x...x...'), snare: P('....x.......x...'), hat: P('..x...x...x...x.'), kickVol: 0.05, snareVol: 0.025, hatVol: 0.007 }, chime: true },
+  // ---- combat
+  battle: { name: 'Bonk Time', bpm: 140, sub: 4,
+    progs: [[[45, 57, 60, 64], [41, 57, 60, 65], [43, 55, 59, 62], [40, 56, 59, 64]]],
+    scale: [69, 71, 72, 74, 76, 77, 79, 80, 81],
+    pad: null, bass: { pattern: [0, null, 12, null, 0, null, 12, null, 0, null, 12, null, 0, 0, 12, null], vol: 0.09, type: 'square', filter: 700 },
+    arp: { pattern: [1, 2, 3, null, 1, 2, 3, null, 1, 2, 3, null, 3, 2, 1, null], vol: 0.02, type: 'square', oct: 12, filter: 2500, release: 0.1 },
+    lead: { vol: 0.045, type: 'square', vibrato: 2, every: 1, rest: 0.25, filter: 3000 },
+    drums: { kick: P('x...x...x...x...'), snare: P('....x.......x...'), hat: P('x.xxx.xxx.xxx.xx'), kickVol: 0.06, snareVol: 0.035, hatVol: 0.008 }, wet: 0.15 },
+  boss: { name: 'Big Bad Boss', bpm: 152, sub: 4,
+    progs: [[[36, 48, 51, 55], [32, 48, 51, 56], [34, 46, 50, 53], [31, 47, 50, 55]]],
+    scale: [60, 61, 63, 65, 67, 68, 71, 72, 73, 75],
+    pad: { vol: 0.03, type: 'sawtooth', filter: 700 },
+    bass: { pattern: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0], vol: 0.07, type: 'sawtooth', filter: 500 },
+    arp: { pattern: [3, null, 2, null, 3, null, 1, null, 3, null, 2, null, 1, 2, 3, 2], vol: 0.02, type: 'square', oct: 12, filter: 2200, release: 0.08 },
+    lead: { vol: 0.05, type: 'sawtooth', vibrato: 4, every: 1, rest: 0.2, filter: 2200 },
+    drums: { kick: P('x.x.x..xx.x.x..x'), snare: P('....x.......x...'), hat: P('xxxxxxxxxxxxxxxx'), tom: P('............xxxx'), kickVol: 0.07, snareVol: 0.04, hatVol: 0.006 }, wet: 0.2 },
+};
+export const TOWN_TRACKS = ['mudlight', 'moonrise', 'tavern', 'minegroove', 'frostfang', 'dragonhoard', 'gobtopia'];
 
 function musicFx() {
   if (fx) return fx;
   const input = ac.createGain();
-  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.3;
-  // dotted-eighth echo
-  const delay = ac.createDelay(2); delay.delayTime.value = EIGHTH * 1.5;
-  const fb = ac.createGain(); fb.gain.value = 0.32;
-  const dwet = ac.createGain(); dwet.gain.value = 0.28;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3200; lp.Q.value = 0.3;
+  const delay = ac.createDelay(2); delay.delayTime.value = 0.4;
+  const fb = ac.createGain(); fb.gain.value = 0.3;
+  const dwet = ac.createGain(); dwet.gain.value = 0.25;
   const dlp = ac.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 1800;
   delay.connect(dlp); dlp.connect(fb); fb.connect(delay); dlp.connect(dwet);
-  // simple generated reverb
   const verb = ac.createConvolver();
   const len = Math.floor(ac.sampleRate * 2.8), ir = ac.createBuffer(2, len, ac.sampleRate);
   for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
   verb.buffer = ir;
   const vwet = ac.createGain(); vwet.gain.value = 0.35;
+  const fade = ac.createGain(); fade.gain.value = 1;
   input.connect(lp);
-  lp.connect(musicGain); lp.connect(delay); lp.connect(verb);
-  dwet.connect(musicGain); verb.connect(vwet); vwet.connect(musicGain);
-  fx = { input };
+  lp.connect(fade); lp.connect(delay); lp.connect(verb);
+  dwet.connect(fade); verb.connect(vwet); vwet.connect(fade);
+  fade.connect(musicGain);
+  fx = { input, delay, vwet, fade };
   return fx;
 }
 
@@ -149,77 +211,118 @@ function voice(freq, t, dur, { type = 'triangle', vol = 0.1, attack = 0.02, rele
   node.connect(g); g.connect(musicFx().input);
   o.start(t); o.stop(t + dur + release + 0.05);
 }
-function softNoise(t, vol, hp = 6000, dur = 0.05) {
+function drumNoise(t, vol, hp, dur, bp) {
   const len = Math.floor(ac.sampleRate * dur), buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
   const src = ac.createBufferSource(); src.buffer = buf;
-  const f = ac.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
+  const f = ac.createBiquadFilter(); f.type = bp ? 'bandpass' : 'highpass'; f.frequency.value = hp;
   const g = ac.createGain(); g.gain.value = vol;
   src.connect(f); f.connect(g); g.connect(musicFx().input); src.start(t);
 }
+function kick(t, vol) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+  g.gain.setValueAtTime(vol * 6, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  o.connect(g); g.connect(musicFx().input); o.start(t); o.stop(t + 0.25);
+}
+function tom(t, vol, f0) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 0.6, t + 0.15);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+  o.connect(g); g.connect(musicFx().input); o.start(t); o.stop(t + 0.2);
+}
 
-function makeMelody(prog) {
-  // gentle phrase: a few long notes and rests per bar, leaning on chord tones
+function makeMelody(T, prog, steps) {
   const notes = [];
-  let idx = 3 + Math.floor(Math.random() * 3);
+  const sc = T.scale;
+  let idx = Math.floor(sc.length / 2);
+  const L = T.lead, stepLen = T.sub === 4 ? [2, 2, 4, 4, 6, 8] : [1, 2, 2, 3, 4, 6];
   for (let bar = 0; bar < 8; bar++) {
     const chord = prog[bar % 4];
     let step = 0;
-    while (step < 8) {
-      if (Math.random() < 0.38) { step += Math.random() < 0.5 ? 2 : 1; continue; }
-      idx = Math.max(0, Math.min(MELODY_SCALE.length - 1, idx + [-2, -1, -1, 0, 1, 1, 2][Math.floor(Math.random() * 7)]));
-      let m = MELODY_SCALE[idx];
-      // snap the first note of a bar to a chord tone
+    while (step < steps) {
+      if (Math.random() < L.rest) { step += T.sub === 4 ? 2 : 1; continue; }
+      idx = Math.max(0, Math.min(sc.length - 1, idx + [-2, -1, -1, 0, 1, 1, 2][Math.floor(Math.random() * 7)]));
+      let m = sc[idx];
       if (step === 0) { const tones = chord.map(c => c % 12); for (let k = 0; k < 3 && !tones.includes(m % 12); k++) m++; }
-      const len = [2, 2, 3, 4, 4, 6][Math.floor(Math.random() * 6)];
-      notes.push({ bar, step, m, len: Math.min(len, 8 - step) });
+      const len = Math.min(stepLen[Math.floor(Math.random() * stepLen.length)], steps - step);
+      notes.push({ bar, step, m, len });
       step += len;
     }
   }
   return notes;
 }
 
-let musicState = null;
+let musicState = null, wantTrack = 'mudlight', townTrack = 'mudlight', musicMode = 'town';
 function startMusic() {
   if (!ac || musicTimer) return;
   musicFx();
-  musicState = { next: ac.currentTime + 0.15, step: 0, section: 0, prog: PROGS[0], melody: null };
+  musicState = null;
+  beginTrack(wantTrack, ac.currentTime + 0.15);
   musicTimer = setInterval(scheduleMusic, 100);
 }
+function beginTrack(id, at) {
+  const T = TRACKS[id] || TRACKS.mudlight;
+  musicState = { id, T, next: at, step: 0, section: -1, prog: T.progs[0], melody: null };
+  const f = musicFx();
+  f.delay.delayTime.setValueAtTime(60 / T.bpm * 0.75, at);
+  f.vwet.gain.setValueAtTime(T.wet ?? 0.35, at);
+  f.fade.gain.cancelScheduledValues(at); f.fade.gain.setValueAtTime(0.0001, at); f.fade.gain.linearRampToValueAtTime(1, at + 0.8);
+}
+// switch songs with a short fade
+function switchTrack(id) {
+  wantTrack = id;
+  if (!ac || !musicTimer || !musicState || musicState.id === id) return;
+  const f = musicFx(), now = ac.currentTime;
+  f.fade.gain.cancelScheduledValues(now); f.fade.gain.setValueAtTime(f.fade.gain.value, now); f.fade.gain.linearRampToValueAtTime(0.0001, now + 0.5);
+  musicState.next = Infinity; // stop scheduling the old song
+  setTimeout(() => { if (wantTrack === id && musicTimer) beginTrack(id, ac.currentTime + 0.05); }, 550);
+}
+export function setTownTrack(id) { townTrack = TRACKS[id] ? id : 'mudlight'; if (musicMode === 'town') switchTrack(townTrack); }
+export function setMusicMode(mode) { musicMode = mode; switchTrack(mode === 'town' ? townTrack : mode); }
+export function currentTrack() { return wantTrack; }
+
 function scheduleMusic() {
   if (!ac || !musicState) return;
-  const M = musicState;
+  const M = musicState, T = M.T;
+  const stepDur = 60 / T.bpm / T.sub, perBar = 4 * T.sub;
   while (M.next < ac.currentTime + 0.7) {
     const t = M.next;
-    const s8 = M.step % 64; // 8 bars of 8 eighths
-    if (s8 === 0) {
+    const sStep = M.step % (perBar * 8);
+    if (sStep === 0) {
       M.section++;
-      M.prog = PROGS[Math.floor(Math.random() * PROGS.length)];
-      // every other section has a lead melody; the rest is just the calm bed
-      M.melody = M.section % 2 === 0 ? makeMelody(M.prog) : null;
+      M.prog = T.progs[Math.floor(Math.random() * T.progs.length)];
+      M.melody = T.lead && M.section % (T.lead.every || 1) === (T.lead.every > 1 ? 1 : 0) ? makeMelody(T, M.prog, perBar) : null;
     }
-    const bar = Math.floor(s8 / 8), st = s8 % 8;
+    const bar = Math.floor(sStep / perBar), st = sStep % perBar;
     const chord = M.prog[bar % 4];
-    if (st === 0) {
-      // warm pad: two detuned soft voices per chord tone
+    const barDur = stepDur * perBar;
+    if (T.pad && st === 0) {
       for (const m of chord.slice(1)) {
-        voice(N(m), t, EIGHTH * 7.6, { type: 'triangle', vol: 0.028, attack: 0.9, release: 1.4, detune: -6, filter: 1400 });
-        voice(N(m), t, EIGHTH * 7.6, { type: 'sine', vol: 0.03, attack: 1.0, release: 1.4, detune: 7 });
+        voice(N(m), t, barDur * 0.95, { type: T.pad.type || 'triangle', vol: T.pad.vol, attack: T.pad.attack || 0.9, release: 1.2, detune: -6, filter: T.pad.filter || 1400 });
+        voice(N(m), t, barDur * 0.95, { type: 'sine', vol: T.pad.vol * 0.9, attack: (T.pad.attack || 0.9) + 0.1, release: 1.2, detune: 7 });
       }
-      voice(N(chord[0] - 12), t, EIGHTH * 3.5, { type: 'triangle', vol: 0.11, attack: 0.04, release: 0.6, filter: 600 });
-      softNoise(t, 0.012, 200, 0.12); // soft "kick" thump
     }
-    if (st === 4) voice(N(chord[0] - 12 + (Math.random() < 0.5 ? 7 : 0)), t, EIGHTH * 3, { type: 'triangle', vol: 0.08, attack: 0.04, release: 0.5, filter: 600 });
-    // plucked arpeggio (retro square, heavily softened)
-    const pattern = [0, 1, 2, 3, 2, 1, 2, 3];
-    const am = chord[pattern[st]] + 12;
-    if (!(M.section % 3 === 1 && st % 2 === 1)) voice(N(am), t, EIGHTH * 0.6, { type: 'square', vol: 0.018, attack: 0.005, release: 0.35, filter: 1500 });
-    if (st % 2 === 1 && Math.random() < 0.6) softNoise(t, 0.006, 7000, 0.03); // brushed hat
-    // breathy flute lead
-    if (M.melody) for (const n of M.melody) if (n.bar === bar && n.step === st) voice(N(n.m), t, EIGHTH * n.len * 0.95, { type: 'sine', vol: 0.06, attack: 0.08, release: 0.5, vibrato: 4 });
-    // sparkly chime every 4 bars
-    if (s8 % 32 === 28 && Math.random() < 0.7) voice(N(chord[3] + 24), t, 0.1, { type: 'sine', vol: 0.025, attack: 0.002, release: 1.6 });
-    M.next += EIGHTH;
+    if (T.bass) {
+      const off = T.bass.pattern[st % T.bass.pattern.length];
+      if (off !== null && off !== undefined) voice(N(chord[0] - 12 + off), t, stepDur * (T.sub === 4 ? 1.6 : 3), { type: T.bass.type || 'triangle', vol: T.bass.vol, attack: 0.01, release: 0.25, filter: T.bass.filter || 650 });
+    }
+    if (T.arp) {
+      const i = T.arp.pattern[st % T.arp.pattern.length];
+      if (i !== null && i !== undefined) voice(N(chord[i] + (T.arp.oct || 12)), t, stepDur * 0.7, { type: T.arp.type || 'square', vol: T.arp.vol, attack: 0.005, release: T.arp.release ?? 0.35, filter: T.arp.filter || 0 });
+    }
+    if (M.melody) for (const n of M.melody) if (n.bar === bar && n.step === st) voice(N(n.m), t, stepDur * n.len * 0.95, { type: T.lead.type, vol: T.lead.vol, attack: 0.04, release: 0.4, vibrato: T.lead.vibrato || 0, filter: T.lead.filter || 0 });
+    const D = T.drums;
+    if (D) {
+      const k = st % (D.kick || D.hat || [1]).length;
+      if (D.kick && D.kick[st % D.kick.length]) kick(t, D.kickVol || 0.03);
+      if (D.snare && D.snare[st % D.snare.length]) { drumNoise(t, D.snareVol || 0.03, 1800, 0.14, true); voice(190, t, 0.04, { type: 'triangle', vol: (D.snareVol || 0.03) * 1.5, release: 0.06 }); }
+      if (D.hat && D.hat[st % D.hat.length]) drumNoise(t, D.hatVol || 0.006, 7000, 0.035);
+      if (D.tom && D.tom[st % D.tom.length]) tom(t, 0.08, 160 - (st % 4) * 20);
+      void k;
+    }
+    if (T.chime && sStep % (perBar * 4) === perBar * 4 - perBar / 2 && Math.random() < 0.7) voice(N(chord[3] + 24), t, 0.1, { type: 'sine', vol: 0.025, attack: 0.002, release: 1.6 });
+    M.next += stepDur;
     M.step++;
   }
 }

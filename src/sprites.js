@@ -263,6 +263,7 @@ function drawHat(p, hat, cx, top, look) {
     case 'ratcrown': p.rect(x - 4, top - 2, 8, 3, '#8a8a8a'); p.px(x - 4, top - 3, '#8a8a8a'); p.px(x + 3, top - 3, '#8a8a8a'); p.px(x - 2, top - 4, '#c0a0a0'); p.px(x + 1, top - 4, '#c0a0a0'); break;
     case 'spikes': for (let i = -4; i <= 4; i += 2) { p.vline(x + i, top - 3, 3, '#2a5a3a'); p.px(x + i, top - 4, '#4a8a5a'); } break;
     case 'stars': p.px(x - 4, top - 3, '#fff8c0'); p.px(x + 3, top - 4, '#fff8c0'); p.px(x, top - 6, '#ffe060'); p.px(x + 5, top - 1, '#ffe060'); p.px(x - 6, top, '#fff'); break;
+    case 'headphones': p.hline(x - 4, top - 1, 8, '#2a2a3a'); p.px(x - 5, top, '#2a2a3a'); p.px(x + 4, top, '#2a2a3a'); p.rect(x - 7, top + 2, 3, 4, '#e0306a'); p.rect(x + 4, top + 2, 3, 4, '#e0306a'); p.px(x - 6, top + 3, '#ff80b0'); p.px(x + 5, top + 3, '#ff80b0'); break;
     case 'nurse': p.rect(x - 4, top - 2, 8, 3, '#ffffff'); p.hline(x - 5, top + 1, 10, '#e8e8e8'); p.px(x, top - 2, '#e02a3a'); p.hline(x - 1, top - 1, 3, '#e02a3a'); p.px(x, top, '#e02a3a'); break;
     case 'dragonhelm': p.rect(x - 5, top - 2, 10, 4, '#a03020'); p.hline(x - 5, top + 2, 10, '#702010'); p.px(x - 6, top - 3, '#f0e8d0'); p.px(x + 5, top - 3, '#f0e8d0'); p.px(x - 7, top - 4, '#f0e8d0'); p.px(x + 6, top - 4, '#f0e8d0'); p.px(x - 2, top - 1, '#ffd040'); p.px(x + 1, top - 1, '#ffd040'); break;
   }
@@ -812,6 +813,19 @@ const BUILD_DRAW = {
     // herb pots
     p.rect(x + 1, H - 11, 3, 3, '#a05a30'); p.px(x + 2, H - 12, '#5ad04a'); p.px(x + 1, H - 13, '#5ad04a');
     if (t >= 4) p.flag(W / 2, y - 20, '#e02a3a');
+  },
+  dj(p, W, H, t) {
+    // speakers, a little stage and the turntable desk (the DJ is drawn live on top)
+    p.rect(2, H - 30, 7, 22, '#2a2a3a'); p.rect(W - 9, H - 30, 7, 22, '#2a2a3a');
+    for (const sx of [5, W - 6]) { p.oval(sx, H - 24, 2, 2, '#5a5a6a'); p.px(sx, H - 24, '#1a1a1a'); p.oval(sx, H - 14, 3, 3, '#5a5a6a'); p.oval(sx, H - 14, 1, 1, '#1a1a1a'); }
+    p.rect(1, H - 9, W - 2, 3, '#6a4a8a'); p.hline(1, H - 9, W - 2, '#9a6ac0');
+    // desk
+    p.rect(8, H - 17, W - 16, 9, '#3a2a4a'); p.hline(8, H - 17, W - 16, '#5a4a6a');
+    p.oval(12, H - 18, 3, 1, '#1a1a1a'); p.oval(W - 12, H - 18, 3, 1, '#1a1a1a'); p.px(12, H - 18, '#e0306a'); p.px(W - 12, H - 18, '#30c0e0');
+    for (let i = 0; i < 4; i++) p.px(14 + i * 1.5, H - 13, ['#ff5a5a', '#ffe060', '#5aff7a', '#5ac0ff'][i]);
+    // light rig
+    p.hline(2, H - 32, W - 4, '#4a4a5a');
+    for (let i = 0; i < 4; i++) p.px(5 + i * 7, H - 31, ['#ff5aa0', '#5ac0ff', '#ffe060', '#7aff6a'][i]);
   },
   tower(p, W, H, t) {
     const tx = W / 2 - 6, tw = 12, ty = H - 44;
