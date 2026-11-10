@@ -10,7 +10,7 @@ function ensure() {
   ac = new AC();
   master = ac.createGain(); master.gain.value = 0.6; master.connect(ac.destination);
   sfxGain = ac.createGain(); sfxGain.gain.value = 0.5; sfxGain.connect(master);
-  musicGain = ac.createGain(); musicGain.gain.value = 0.17; musicGain.connect(master);
+  musicGain = ac.createGain(); musicGain.gain.value = 0.26; musicGain.connect(master);
   return ac;
 }
 
