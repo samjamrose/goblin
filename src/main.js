@@ -159,6 +159,14 @@ async function boot() {
   window.addEventListener('pointerdown', unlockAudio, { once: true });
 }
 
+// Offline support when hosted as a website (not inside claude.ai, which runs the game in a frame)
+try {
+  const hosted = location.protocol === 'https:' || location.hostname === 'localhost';
+  if ('serviceWorker' in navigator && hosted && window.top === window && !window.claude) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { }));
+  }
+} catch (e) { }
+
 boot().catch(e => {
   console.error(e);
   const l = document.getElementById('loading');

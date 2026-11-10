@@ -11,7 +11,7 @@ Every pixel (goblins, buildings, terrain, enemies, icons) and every sound is gen
   node tests/serve.mjs . 8123   # then visit http://localhost:8123
   ```
 - **Single file:** `npm install && npm run build` creates `dist/index.html`, a fully self-contained build you can host anywhere (or open directly).
-- **GitHub Pages:** enable Pages for this repository (deploy from branch, root folder). `index.html` runs as-is.
+- **GitHub Pages:** Settings → Pages → Source: *Deploy from a branch*, pick the branch and the `/ (root)` folder. The site is then at `https://<user>.github.io/goblin/`. It works offline after the first visit (service worker) and can be installed to a phone's home screen.
 
 Progress saves automatically to the browser (every 15 seconds and whenever you leave). You can also export or import a save code under **More → Settings**.
 
