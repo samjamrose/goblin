@@ -1,6 +1,6 @@
 {
-  "name": "Goblin Capital Tycoon",
-  "short_name": "Goblin Tycoon",
+  "name": "Goblinsburg",
+  "short_name": "Goblinsburg",
   "description": "Build a ridiculous goblin empire from a muddy camp to a gold-toothed capital.",
   "start_url": "./index.html",
   "display": "standalone",

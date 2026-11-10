@@ -1,4 +1,4 @@
-# Goblin Capital Tycoon
+# Goblinsburg
 
 A mobile-first pixel-art fantasy tycoon game. Start with a muddy camp and two goblins, and grow it into a gold-toothed goblin empire full of ridiculous characters.
 

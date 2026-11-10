@@ -752,7 +752,7 @@ export class UI {
     h += `<h3>Save</h3><p class="small muted">Your game saves automatically on this device. Copy your save code to move it elsewhere.</p>
       <div class="row wrap"><button class="btn small blue" data-act="save-now">Save now</button><button class="btn small" data-act="export">Export save</button><button class="btn small ghost" data-act="import">Import save</button></div>`;
     h += `<h3>Danger zone</h3><button class="btn small red" data-act="reset">Delete save & restart</button>`;
-    h += `<h3>About</h3><p class="small muted">Goblin Capital Tycoon — every pixel drawn by code, every goblin questionable. Made with mud and love.</p>`;
+    h += `<h3>About</h3><p class="small muted">Goblinsburg — every pixel drawn by code, every goblin questionable. Made with mud and love.</p>`;
     this.setBody(h);
   }
 
@@ -1004,15 +1004,15 @@ export class UI {
     const lines = [`💰 ${fmt(G.incomePerSec(false))} gold / sec`, `👺 ${s.goblins.length} goblins (${Object.keys(s.codex).length} heroes)`, `⚔️ ${s.stats.bosses} bosses defeated`, `🦷 ${fmt(s.teethEarned)} golden teeth`];
     lines.forEach((l, i) => ctx.fillText(l, 28, 140 + i * 36));
     if (best) { ctx.font = '600 16px "Pixelify Sans", sans-serif'; ctx.fillStyle = RARITIES[G.rarityIdx(best.rarity)].color; ctx.fillText(best.name.slice(0, 24), 410, 290); }
-    ctx.fillStyle = '#7aff6a'; ctx.font = '700 18px "Pixelify Sans", sans-serif'; ctx.fillText('GOBLIN CAPITAL TYCOON', 28, 318);
-    const text = `My goblin capital "${s.name}" is a level ${s.level} ${G.rankName()} making ${fmt(G.incomePerSec(false))} gold/sec with ${s.goblins.length} goblins! Can your goblins beat that? #GoblinCapitalTycoon`;
+    ctx.fillStyle = '#7aff6a'; ctx.font = '700 18px "Pixelify Sans", sans-serif'; ctx.fillText('GOBLINSBURG', 28, 318);
+    const text = `My goblin capital "${s.name}" is a level ${s.level} ${G.rankName()} making ${fmt(G.incomePerSec(false))} gold/sec with ${s.goblins.length} goblins! Can your goblins beat that? #Goblinsburg`;
     try {
       const blob = await new Promise(r => c.toBlob(r, 'image/png'));
-      const file = new File([blob], 'my-goblin-capital.png', { type: 'image/png' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text, title: 'Goblin Capital Tycoon' }); return; }
-      if (navigator.share) { await navigator.share({ text, title: 'Goblin Capital Tycoon', url: location.href }); return; }
+      const file = new File([blob], 'my-goblinsburg.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text, title: 'Goblinsburg' }); return; }
+      if (navigator.share) { await navigator.share({ text, title: 'Goblinsburg', url: location.href }); return; }
     } catch (e) { if (e && e.name === 'AbortError') return; }
-    this.modal(`<h2>Brag Card</h2><img src="${c.toDataURL()}" style="width:100%;border-radius:8px"><p class="small">${esc(text)}</p><div class="modal-actions"><a class="btn" download="my-goblin-capital.png" href="${c.toDataURL()}">Download</a><button class="btn blue" id="m-copy">Copy text</button><button class="btn ghost" data-act="close-modal">Close</button></div>`);
+    this.modal(`<h2>Brag Card</h2><img src="${c.toDataURL()}" style="width:100%;border-radius:8px"><p class="small">${esc(text)}</p><div class="modal-actions"><a class="btn" download="my-goblinsburg.png" href="${c.toDataURL()}">Download</a><button class="btn blue" id="m-copy">Copy text</button><button class="btn ghost" data-act="close-modal">Close</button></div>`);
     $('#m-copy').onclick = () => { navigator.clipboard?.writeText(text); this.toast('Copied!', 'good'); };
   }
 
