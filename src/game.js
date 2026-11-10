@@ -93,8 +93,8 @@ export const G = {
 
   save() {
     this.s.lastSave = this.now();
-    if (!this.storage) return;
-    try { this.storage.setItem(SAVE_KEY, JSON.stringify(this.s)); this.emit('saved'); } catch (e) { console.warn('save failed', e); }
+    if (this.storage) try { this.storage.setItem(SAVE_KEY, JSON.stringify(this.s)); } catch (e) { console.warn('save failed', e); }
+    this.emit('saved');
   },
 
   exportSave() {
@@ -110,6 +110,7 @@ export const G = {
       if (!s || s.v !== 1 || !s.buildings) throw new Error('bad');
       this.s = this.migrate(s);
       this.save();
+      try { this.storage && this.storage.setItem('gct_keep_local', '1'); } catch (e) { }
       return true;
     } catch (e) { return false; }
   },
@@ -118,6 +119,7 @@ export const G = {
     try { this.storage && this.storage.removeItem(SAVE_KEY); } catch (e) { }
     this.newState();
     this.save();
+    try { this.storage && this.storage.setItem('gct_keep_local', '1'); } catch (e) { }
   },
 
   // ------------------------------------------------------------- Helpers

@@ -292,7 +292,12 @@ const SHOTS = process.env.SHOTS || null;
   const rat = await ev(() => { const w = window.__game.world; w.camTarget = null; w.cam.vx = w.cam.vy = 0; const [id, r] = [...w.ratsVis.entries()][0] || []; if (!r) return null; r.t = 99; r.tx = r.x; r.ty = r.y; return w.toScreen(r.x, r.y - 2); });
   if (rat) {
     const el = await ev(([x, y]) => { const e = document.elementFromPoint(x, y); return e && (e.id || e.className); }, rat);
-    await p.mouse.click(rat[0], rat[1]); await wait(150);
+    for (let k = 0; k < 3; k++) {
+      const pos = await ev(() => { const w = window.__game.world; const r = [...w.ratsVis.values()][0]; if (!r) return null; r.t = 99; r.tx = r.x; r.ty = r.y; return w.toScreen(r.x, r.y - 2); });
+      if (!pos) break;
+      await p.mouse.click(pos[0], pos[1]); await wait(150);
+      if (await ev(() => window.__game.G.s.stats.rats) >= 1) break;
+    }
     check(await ev(() => window.__game.G.s.stats.rats) >= 1, 'rat squashed (el=' + el + ', pt=' + rat.map(Math.round) + ')');
   } else check(false, 'rat visible');
   await ev(() => { window.__game.G.rt.rats = []; });
@@ -411,6 +416,28 @@ const SHOTS = process.env.SHOTS || null;
     check(st.gold >= 123456, 'gold kept (plus offline earnings)');
     await q.screenshot({ path: (SHOTS || '/tmp') + '/e2e-migrated.png' });
     await ctx2.close();
+  }
+
+  // ---- cloud save: a progressed game stored in the (simulated) claude.ai database comes back on a fresh device
+  {
+    const fs = require('fs');
+    const old = JSON.parse(fs.readFileSync(__dirname + '/fixtures/v1-save.json', 'utf8'));
+    const ctx3 = await browser.newContext({ ...devices['iPhone 13'] });
+    await ctx3.addInitScript((save) => {
+      const store = window.__mockDb = window.__mockDb || { docs: { 'data/users/u1/save': { json: save } }, writes: 0 };
+      window.claude = { use: async (n) => n === 'user' ? { id: async () => 'u1' } : n === 'db' ? { doc: (path) => ({ get: async () => ({ exists: !!store.docs[path], data: () => store.docs[path] }), set: async (b) => { store.docs[path] = b; store.writes++; } }) } : null };
+    }, JSON.stringify(old));
+    const q = await ctx3.newPage();
+    q.on('pageerror', e => errs.push('PAGEERR(cloud) ' + e.message));
+    await q.goto(URL);
+    await q.waitForTimeout(2500);
+    const st = await q.evaluate(() => ({ name: window.__game.G.s.name, lvl: window.__game.G.s.level, intro: document.querySelector('#modal').classList.contains('open') && !!document.querySelector('#modal #m-start') }));
+    check(st.name === 'MyOldCapital' && st.lvl === 9 && !st.intro, 'cloud save restored on a fresh device ' + JSON.stringify(st));
+    await q.evaluate(() => { window.__game.G.s.gems = 4242; window.__game.cloud.push(true); });
+    await q.waitForTimeout(500);
+    const w = await q.evaluate(() => { const d = window.__mockDb.docs['data/users/u1/save']; return JSON.parse(d.json).gems; });
+    check(w === 4242, 'progress is written to the cloud');
+    await ctx3.close();
   }
 
   // ---- sustained run: let the world simulate for a while

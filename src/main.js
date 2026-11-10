@@ -4,6 +4,7 @@ import { World } from './world.js';
 import { BattleScreen } from './battle.js';
 import { UI } from './ui.js';
 import { sfx, setSfx, setMusic, unlockAudio } from './audio.js';
+import { createCloud } from './cloud.js';
 import { BUILDING_BY_ID, TILE, TREASURES, REGION_BY_ID } from './data.js';
 import { fmt } from './util.js';
 import { goblinPortrait, icon } from './sprites.js';
@@ -29,7 +30,19 @@ async function boot() {
   const battle = new BattleScreen(document.getElementById('battle'), { sfx, haptic });
   ui = new UI(G, world, battle);
   ui.init();
-  window.__game = { G, world, ui, battle };
+  // ---------------- cloud save (claude.ai): survives updates, app restarts and devices
+  const cloud = createCloud(G, (remote) => {
+    G.s = G.migrate(remote);
+    G.save();
+    const off = G.applyOffline();
+    world.buildGrid(); world.agents.clear(); world.terrainDirty = true;
+    setSfx(G.s.settings.sound); setMusic(G.s.settings.music);
+    ui.modalQueue = []; ui.closeModal(); ui.closeSheet();
+    ui.toast(`☁️ Loaded your saved capital: ${G.s.name}`, 'good', 'house');
+    if (off) ui.showOffline(off);
+  });
+  G.on('saved', () => cloud.push(false));
+  window.__game = { G, world, ui, battle, cloud };
 
   // ---------------- event wiring
   G.on('toast', (t, k) => ui.toast(t, k));
@@ -132,7 +145,12 @@ async function boot() {
   window.addEventListener('scroll', () => { if (window.scrollY || window.scrollX) window.scrollTo(0, 0); });
   document.addEventListener('focusout', () => setTimeout(() => { app.scrollTop = 0; window.scrollTo(0, 0); }, 50));
   document.addEventListener('visibilitychange', () => { if (document.hidden) G.save(); else { const r = G.applyOffline(); if (r && r.away > 60) ui.showOffline(r); } });
-  window.addEventListener('pagehide', () => G.save());
+  window.addEventListener('pagehide', () => { G.save(); cloud.push(true); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) cloud.push(true); });
+  // an imported or reset game should replace the cloud copy, not be replaced by it
+  let keepLocal = false;
+  try { keepLocal = store && store.getItem('gct_keep_local') === '1'; if (keepLocal) store.removeItem('gct_keep_local'); } catch (e) { }
+  cloud.connect(keepLocal);
   window.addEventListener('pointerdown', unlockAudio, { once: true });
 }
 
