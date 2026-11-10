@@ -147,7 +147,8 @@ export class UI {
     this.title('Build & Upgrade');
     const resDot = G.isBuilt('research') && RESEARCH.some(r => !G.s.research[r.id] && G.s.level >= r.lvl && G.s.gold >= G.researchCost(r).gold && G.s.ore >= G.researchCost(r).ore);
     const distDot = DISTRICTS.some(d => !G.s.districts[d.id] && G.s.level >= d.unlock && G.s.gold >= G.districtCost(d.id));
-    this.tabs([['biz', 'Businesses'], ['util', 'Utilities'], ['research', 'Research', resDot], ['districts', 'Districts', distDot]], sub, 'build');
+    const nb = this.newBuildable();
+    this.tabs([['biz', 'Businesses', nb.some(b => b.kind === 'biz')], ['util', 'Utilities', nb.some(b => b.kind === 'util')], ['research', 'Research', resDot], ['districts', 'Districts', distDot]], sub, 'build');
     if (sub === 'research') return this.pResearch();
     if (sub === 'districts') return this.pDistricts();
     let h = '';
@@ -169,10 +170,11 @@ export class UI {
     }
     const nm = G.nextMilestone(st.lvl);
     const prevM = [0, ...MILESTONES].filter(m => m <= st.lvl).pop() || 0;
-    return `<div class="card row" data-act="open-building" data-id="${b.id}">
+    const isNew = st.lvl === 0 && G.s.gold >= G.bizCost(b.id, 1);
+    return `<div class="card row ${isNew ? 'hl' : ''}" data-act="open-building" data-id="${b.id}">
       <div class="thumb"><img src="${bThumb(b.id, G.tier(b.id))}"></div>
       <div class="grow">
-        <div class="bname">${b.name} <span class="tag">Lv ${st.lvl}</span></div>
+        <div class="bname">${b.name} ${st.lvl ? `<span class="tag">Lv ${st.lvl}</span>` : '<span class="tag new">NEW</span>'}</div>
         <div class="bsub" ${this.b(el => { el.innerHTML = st.lvl ? `${iconImg('coin')} ${fmt(G.buildingIncome(b.id))}/s · ${G.workers(b.id).length}/${G.workerSlots(b.id)} ${iconImg('goblin')}${G.s.damaged[b.id] ? ' · <span class="red-t">Damaged!</span>' : ''}` : `Earns ${fmt(b.income * G.globalMult())}/s at Lv 1`; })}></div>
         ${nm ? `<div class="pb"><i style="width:${((st.lvl - prevM) / (nm - prevM) * 100).toFixed(0)}%"></i></div><div class="small muted">Next ×2 at Lv ${nm}</div>` : ''}
       </div>
@@ -400,13 +402,18 @@ export class UI {
     if (g.assign.t === 'med') return `<span class="st" style="color:var(--red)">🩹 ${g.inj && g.inj.end ? 'Healing' : 'Injured'}</span>`;
     return '';
   }
+  hpBar(g) {
+    const f = this.G.hpFrac(g);
+    if (f >= 1 || (g.assign && g.assign.t === 'med')) return '';
+    return `<div class="hpb" title="Health"><i style="width:${Math.round(f * 100)}%"></i></div>`;
+  }
   gcard(g, act = 'goblin', extra = '') {
     const ri = this.G.rarityIdx(g.rarity);
     return `<div class="gcard r-${g.rarity} ${ri >= 3 ? 'myth-glow' : ''} ${extra}" data-act="${act}" data-uid="${g.uid}">
       <span class="lv">${g.lvl}</span><img class="job" src="${icon(JOB_ICON[g.job])}">
       <img class="por" src="${goblinPortrait(g.look, 3)}">
       <div class="stars">${'★'.repeat(g.stars || 0)}</div>
-      <div class="nm">${esc(g.name)}</div>${this.assignLabel(g)}</div>`;
+      <div class="nm">${esc(g.name)}</div>${this.assignLabel(g)}${this.hpBar(g)}</div>`;
   }
 
   goblinModal(uid) {
@@ -431,6 +438,7 @@ export class UI {
         <div class="stat">Work bonus<b>+${Math.round(G.workerBonus(g, { job: g.job }) * 100)}%</b></div>
       </div>
       <p class="small"><b>${assignTxt}</b></p>
+      ${G.hpFrac(g) < 1 && g.assign?.t !== 'med' ? `<p class="small red-t" ${this.b(el => { const f = G.hpFrac(g); el.textContent = f >= 1 ? 'Fully recovered!' : `❤️ Health ${Math.round(f * 100)}% · recovering in town (full in ${fmtTime((1 - f) * 90)})`; })}></p>` : ''}
       ${g.lvl < max ? `<div class="row"><button class="btn grow" data-act="train" data-uid="${uid}" data-n="1" ${this.b(el => { const c = G.trainCost(g); el.classList.toggle('no', G.s.mushrooms < c); el.innerHTML = `Train ${iconImg('shroom')}${fmt(c)}`; })}></button>
         <button class="btn grow" data-act="train" data-uid="${uid}" data-n="10">Train ×10</button></div>` : '<p class="green-t"><b>Max level!</b> Duplicates add stars (+5 max level).</p>'}
       <h3>Gear</h3>
@@ -546,7 +554,7 @@ export class UI {
       <div class="vs"><span>Your team<br><span class="pw green-t">${fmt(tp)}</span></span><span style="font-size:22px">VS</span><span style="text-align:right">Enemies<br><span class="pw red-t">${fmt(ep)}</span></span></div>
       <div class="small center" style="margin-top:4px">${ratio > 1.4 ? '<span class="green-t">Easy win</span>' : ratio > 1 ? '<span class="gold-t">Should win</span>' : ratio > 0.75 ? '<span class="gold-t">Risky — tap and bomb a lot!</span>' : '<span class="red-t">Very dangerous — train your goblins!</span>'}</div>
       <button class="btn gold wide" style="margin-top:8px" data-act="fight" data-id="${id}" data-stage="${stage}">${iconImg('sword')} ${st >= STAGES_PER_REGION ? 'Re-fight Boss (farm)' : 'FIGHT!'}</button></div>`;
-    h += `<div class="card row"><div class="grow small"><b>Party:</b> ${team.map(g => esc(g.name.split(' ')[0])).join(', ')}</div><button class="btn small blue" data-act="party">Change</button></div>`;
+    h += `<div class="card row"><div class="grow small"><b>Party:</b> ${team.map(g => esc(g.name.split(' ')[0])).join(', ')}<div class="small" ${this.b(el => { const f = team.reduce((t, g) => t + G.hpFrac(g), 0) / Math.max(1, team.length); el.innerHTML = f >= 0.999 ? '<span class="green-t">❤️ Full health</span>' : `<span class="red-t">❤️ Health ${Math.round(f * 100)}%</span> <span class="muted">· wounds carry into the next fight</span>`; })}></div></div><button class="btn small blue" data-act="party">Change</button></div>`;
     if (st > 0) {
       h += `<h3>Replay cleared stages</h3><div class="row wrap">${Array.from({ length: Math.min(st, STAGES_PER_REGION) }, (_, i) => `<button class="btn tiny ghost" data-act="fight" data-id="${id}" data-stage="${i + 1}">${i + 1 === STAGES_PER_REGION ? 'Boss' : i + 1}</button>`).join('')}</div>`;
     }
@@ -897,6 +905,7 @@ export class UI {
       team: team.map(g => G.goblinCombat(g)), enemies: G.battleSetup(regionId, stage), region: R,
       bombMult: 1 + G.researchSum('bomb'),
       onEnd: (won, pokes, fled, b) => {
+        G.recordWounds(b);
         // losing sends the whole party to the infirmary; otherwise only the fallen
         const hurt = won || fled ? G.casualties(b) : b.units.filter(u => u.side === 'g' && u.gob).map(u => u.gob);
         const res = G.finishBattle(regionId, stage, won, pokes, hurt);
@@ -926,6 +935,7 @@ export class UI {
       team: defs.map(g => G.goblinCombat(g, true)), enemies: inv.enemies, region: { sky: ['#ffb070', '#ffe0a0'], ground: '#5fa83e', props: 'fences' },
       bombMult: 1 + G.researchSum('bomb'),
       onEnd: (won, pokes, fled, b) => {
+        G.recordWounds(b);
         G.s.stats.pokes += pokes;
         const hurt = won || fled ? G.casualties(b) : b.units.filter(u => u.side === 'g' && u.gob).map(u => u.gob);
         const r = G.resolveInvasion(won, hurt);
@@ -1046,11 +1056,17 @@ export class UI {
       const sp = el.querySelector('span'); if (sp.textContent !== w.t) sp.textContent = w.t;
     });
   }
+  // buildings not yet built that are unlocked and affordable right now
+  newBuildable() {
+    const G = this.G;
+    return BUILDINGS.filter(b => !G.isBuilt(b.id) && G.canBuildHere(b.id) && G.s.gold >= (b.kind === 'biz' ? G.bizCost(b.id, 1) : G.utilCost(b.id)));
+  }
   badges() {
     const G = this.G, s = G.s;
     const setB = (id, n) => { const el = document.getElementById(id); const v = n ? (n === true ? '!' : String(n)) : ''; if (el.textContent !== v) { el.textContent = v; el.classList.toggle('show', !!v); } };
-    const newBuild = BUILDINGS.some(b => b.kind === 'biz' && !G.isBuilt(b.id) && G.canBuildHere(b.id) && s.gold >= G.bizCost(b.id, 1)) || DISTRICTS.some(d => !s.districts[d.id] && s.level >= d.unlock && s.gold >= G.districtCost(d.id));
-    setB('b-build', newBuild);
+    const newBuild = this.newBuildable().length > 0;
+    const el = document.getElementById('b-build');
+    if (el.classList.contains('dot') !== newBuild) { el.textContent = ''; el.classList.toggle('dot', newBuild); el.classList.toggle('show', newBuild); }
     setB('b-goblins', (G.canRecruit() && s.mushrooms >= G.recruitCost()) || s.tickets > 0 ? true : 0);
     setB('b-explore', s.expeditions.filter(e => !e.claimed && G.now() >= e.end).length);
     const qn = s.daily.quests.filter(q => !q.claimed && G.dailyProgress(q) >= q.n).length + (s.daily.loginClaimed ? 0 : 1) + (G.storyQuest() && G.storyProgress() >= 1 ? 1 : 0);

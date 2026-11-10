@@ -30,9 +30,12 @@ const SHOTS = process.env.SHOTS || null;
 
   // ---- build mushroom patch by tapping the plot on the map
   const tapWorld = async (wx, wy) => { const [sx, sy] = await ev(([x, y]) => window.__game.world.toScreen(x, y), [wx, wy]); await p.mouse.click(sx, sy); };
-  await tapWorld(20.5 * 16, 19.5 * 16);
+  check(await p.isVisible('#b-build.dot'), 'red dot on Build when something new can be built');
+  await p.click('#nav button[data-tab=build]');
+  await wait(200);
+  await p.click('.card[data-id=shroom]');
   await wait(300);
-  check(await p.isVisible('#sheet.open'), 'building sheet opens on tap');
+  check(await p.isVisible('#sheet.open'), 'building sheet opens from the Build list');
   await p.click('.sheet-body .btn.gold');
   await wait(300);
   check(await p.isVisible('#placebar'), 'placement mode starts on BUILD');
@@ -194,6 +197,14 @@ const SHOTS = process.env.SHOTS || null;
   check(!(await p.isVisible('#battle.show')), 'battle closed');
   await ev(() => window.__game.ui.closeSheet());
 
+  // ---- wounds carry over and recover in town
+  {
+    const r = await ev(() => { const G = window.__game.G, g = G.battleTeam()[0]; g.hpf = 0.5; g.hpAt = G.now(); const c = G.goblinCombat(g); return { ratio: c.hpNow / c.hp, uid: g.uid }; });
+    check(Math.abs(r.ratio - 0.5) < 0.02, 'wounded goblin starts the next fight hurt');
+    await wait(1500);
+    const f2 = await ev((uid) => window.__game.G.hpFrac(window.__game.G.gob(uid)), r.uid);
+    check(f2 > 0.5 && f2 < 0.6, 'health slowly recovers in town (' + f2.toFixed(3) + ')');
+  }
   // ---- injuries & infirmary
   await ev(() => window.__game.ui.closeSheet());
   const team = await ev(() => window.__game.G.battleTeam().map(g => g.uid));

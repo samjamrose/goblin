@@ -96,8 +96,8 @@ export class World {
   // a building is drawn if built (wherever placed), or as a "suggested plot" at its default spot when that spot is free
   shown(b) {
     const G = this.G;
-    if (G.s.buildings[b.id].lvl > 0) return true;
-    return !!(this.plotOk && this.plotOk[b.id]);
+    // only real buildings appear on the map; new ones are started from the Build menu
+    return G.s.buildings[b.id].lvl > 0;
   }
   refreshPlots() {
     const G = this.G, key = this.placeVer + '|' + Object.keys(G.s.districts).join(',') + '|' + G.s.level;
@@ -672,7 +672,6 @@ export class World {
       this.clampCam();
     }
     this.applyPlacements();
-    this.refreshPlots();
     this.syncAgents();
     this.updateAgents(dt);
     for (const k in this.bounce) { this.bounce[k] -= dt; if (this.bounce[k] <= 0) delete this.bounce[k]; }
@@ -878,6 +877,14 @@ export class World {
     x.putImageData(img, 0, 0);
     return (this.fogTex = c);
   }
+  fogPuff() {
+    if (this.puffTex) return this.puffTex;
+    const c = makeCanvas(64, 64), x = c.getContext('2d');
+    const g = x.createRadialGradient(32, 32, 2, 32, 32, 32);
+    g.addColorStop(0, 'rgba(232,236,244,1)'); g.addColorStop(0.45, 'rgba(222,228,238,0.8)'); g.addColorStop(1, 'rgba(214,220,232,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+    return (this.puffTex = c);
+  }
   renderFog(ctx) {
     const G = this.G, locked = DISTRICTS.filter(d => !G.districtOpen(d.id));
     if (!locked.length) return;
@@ -898,20 +905,20 @@ export class World {
       const e = { l: openSide(d, 'l'), r: openSide(d, 'r'), t: openSide(d, 't'), b: openSide(d, 'b') };
       return { d, e, x: d.x * TILE - (e.l ? FE / 2 : 0), y: d.y * TILE - (e.t ? FE / 2 : 0), w: d.w * TILE + (e.l ? FE / 2 : 0) + (e.r ? FE / 2 : 0), h: d.h * TILE + (e.t ? FE / 2 : 0) + (e.b ? FE / 2 : 0) };
     });
-    // misty base
-    f.fillStyle = 'rgba(206,214,226,0.72)';
+    // thick misty base
+    f.fillStyle = 'rgba(214,220,232,0.9)';
     for (const r of rects) f.fillRect(r.x, r.y, r.w, r.h);
     // billowing layers drifting at different speeds
     const tex = this.fogTexture();
     if (!this.fogPat) this.fogPat = f.createPattern(tex, 'repeat');
     const pat = this.fogPat;
-    for (const [alpha, vx, vy, scale] of [[0.95, 5, 1.5, 2.6], [0.75, -8, 3, 1.7], [0.5, 2, -4, 4]]) {
+    for (const [alpha, vx, vy, scale] of [[1, 5, 1.5, 2.6], [0.85, -8, 3, 1.7], [0.6, 2, -4, 4]]) {
       if (pat.setTransform) pat.setTransform(new DOMMatrix().translateSelf((this.time * vx) % (128 * scale), (this.time * vy) % (128 * scale)).scaleSelf(scale, scale));
       f.globalAlpha = alpha; f.fillStyle = pat;
       for (const r of rects) f.fillRect(r.x, r.y, r.w, r.h);
     }
     f.globalAlpha = 1;
-    // feather the edges that face explored land
+    // cut a soft band out of edges that face explored land...
     f.globalCompositeOperation = 'destination-out';
     for (const r of rects) {
       const { e } = r;
@@ -921,6 +928,33 @@ export class World {
       if (e.t) grad(0, r.y, 0, r.y + FE, r.x, r.y, r.w, FE);
       if (e.b) grad(0, r.y + r.h, 0, r.y + r.h - FE, r.x, r.y + r.h - FE, r.w, FE);
     }
+    // ...then rebuild that edge from drifting cloud puffs so it is lumpy and alive
+    f.globalCompositeOperation = 'source-over';
+    const puff = this.fogPuff();
+    const hash = (n) => { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); };
+    const t = this.time;
+    for (const r of rects) {
+      const { e, d } = r;
+      const sides = [];
+      if (e.l) sides.push([d.x * TILE, d.y * TILE, 0, 1, d.h * TILE, -1, 0]);
+      if (e.r) sides.push([(d.x + d.w) * TILE, d.y * TILE, 0, 1, d.h * TILE, 1, 0]);
+      if (e.t) sides.push([d.x * TILE, d.y * TILE, 1, 0, d.w * TILE, 0, -1]);
+      if (e.b) sides.push([d.x * TILE, (d.y + d.h) * TILE, 1, 0, d.w * TILE, 0, 1]);
+      sides.forEach(([sx, sy, dx, dy, len, nx, ny], si) => {
+        for (let k = -8, i = 0; k < len + 8; k += 9, i++) {
+          const seed = d.x * 31 + d.y * 17 + si * 101 + i;
+          const h1 = hash(seed), h2 = hash(seed + 0.37), h3 = hash(seed + 0.71);
+          // puffs breathe in and out and slide along the edge
+          const out = (h1 - 0.35) * 16 + Math.sin(t * (0.25 + h2 * 0.3) + h3 * 6.28) * 7;
+          const slide = Math.sin(t * 0.15 + h1 * 6.28) * 5;
+          const rad = 13 + h2 * 15 + Math.sin(t * (0.4 + h1 * 0.3) + i) * 3;
+          const px = sx + dx * (k + slide) + nx * out, py = sy + dy * (k + slide) + ny * out;
+          f.globalAlpha = 0.55 + h3 * 0.35;
+          f.drawImage(puff, px - rad, py - rad, rad * 2, rad * 2);
+        }
+      });
+    }
+    f.globalAlpha = 1;
     f.globalCompositeOperation = 'source-over';
     ctx.save();
     ctx.imageSmoothingEnabled = true;
@@ -1067,6 +1101,13 @@ export class World {
       ctx.fillStyle = '#e8f0ff'; ctx.fillRect(Math.round(a.x - 2), Math.round(a.y - 12), 14, 6);
       if (Math.floor(this.time * 1.5 + a.uid) % 3 === 0) { ctx.fillStyle = '#fff'; ctx.font = '6px sans-serif'; ctx.fillText('z', a.x + 8, a.y - 16 - (this.time * 4 % 4)); }
     } else ctx.drawImage(a.dir < 0 ? sh.flip : sh.sheet, f * GOB_W, 0, GOB_W, GOB_H, x, y, GOB_W, GOB_H);
+    const hf = this.G.hpFrac(g);
+    if (!hurt && hf < 1) {
+      const bx = Math.round(a.x - 6), by = Math.round(a.y - GOB_H - 1);
+      ctx.fillStyle = '#1c1424'; ctx.fillRect(bx - 1, by - 1, 14, 4);
+      ctx.fillStyle = '#5a1a1a'; ctx.fillRect(bx, by, 12, 2);
+      ctx.fillStyle = hf > 0.5 ? '#7aff6a' : hf > 0.25 ? '#ffcf4a' : '#ff5a4a'; ctx.fillRect(bx, by, Math.max(1, 12 * hf), 2);
+    }
     if (hurt) {
       // red cross badge + heal progress
       const bx = Math.round(a.x - 3), by = Math.round(a.y - (a.state === 'work' ? 22 : GOB_H + 4));

@@ -102,6 +102,8 @@ img { image-rendering: pixelated; }
 #nav button:active img { transform: scale(.9); }
 .badge { position: absolute; top: 0; right: 18%; min-width: 18px; height: 18px; border-radius: 9px; background: var(--red); color: #fff; font-size: 11px; font-style: normal; font-weight: 700; display: none; align-items: center; justify-content: center; padding: 0 4px; box-shadow: 0 0 0 2px var(--ink); }
 .badge.show { display: flex; animation: bump .4s; }
+.badge.dot { min-width: 14px; width: 14px; height: 14px; padding: 0; top: 2px; right: 26%; animation: bump .4s, dotPulse 1.2s .4s infinite; }
+@keyframes dotPulse { 50% { transform: scale(1.25); } }
 
 /* ---------- sheet */
 #sheet { position: absolute; inset: 0; z-index: 30; pointer-events: none; }
@@ -190,6 +192,8 @@ p { margin: 6px 0; line-height: 1.35; }
 .gcard .job { position: absolute; top: 3px; right: 4px; width: 18px; height: 18px; }
 .gcard .st { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gcard .st.work { color: var(--green); }
+.hpb { height: 4px; margin: 3px 8px 0; background: #3a1a1a; border-radius: 2px; overflow: hidden; }
+.hpb i { display: block; height: 100%; background: linear-gradient(90deg, #ff5a4a, #7aff6a); }
 .gcard .stars { color: var(--gold); font-size: 10px; letter-spacing: -1px; height: 12px; }
 .gcard.sil .por { filter: brightness(0) opacity(.55); }
 .gcard.sel { box-shadow: 0 0 0 2px var(--ink), inset 0 0 0 3px var(--green), 0 0 10px var(--green); }

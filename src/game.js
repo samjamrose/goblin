@@ -5,7 +5,7 @@ import {
   REGIONS, REGION_BY_ID, STAGES_PER_REGION, MISSIONS, TREASURES, TREASURE_SETS, RESEARCH, RESEARCH_BY_ID,
   PERKS, PERK_BY_ID, PRESTIGE_MIN_GOLD, teethFor, ITEM_WEAPONS, ITEM_TRINKETS, ITEM_ADJ, ITEM_OF, FUNNY_EVENTS,
   AMBIENT_EVENTS, DAILY_TEMPLATES, STORY, ACHIEVEMENTS, RIVAL_NAMES, LOGIN_REWARDS, ENEMIES,
-  MAP_W, MAP_H, ROADS, DECOR, DECOR_SIZE, HEAL_MS, MEDIC_NAMES,
+  MAP_W, MAP_H, ROADS, DECOR, DECOR_SIZE, HEAL_MS, MEDIC_NAMES, RECOVER_MS,
 } from './data.js';
 import { rng, pick, ri, clamp, weighted, dayKey, weekKey, hashStr, fmt, shuffle } from './util.js';
 import { enemyTeam, resolveInstant } from './battlesim.js';
@@ -573,7 +573,7 @@ export const G = {
       const dm = this.defenseMult();
       hp *= dm.hp; atk *= dm.atk;
     }
-    return { name: g.name, kind: 'goblin', look: g.look, gob: g.uid, rarity: g.rarity, hp, atk, spd: jc.spd, crit: jc.crit || 0.08, splash: jc.splash || 0 };
+    return { name: g.name, kind: 'goblin', look: g.look, gob: g.uid, rarity: g.rarity, hp, hpNow: hp * this.hpFrac(g), atk, spd: jc.spd, crit: jc.crit || 0.08, splash: jc.splash || 0 };
   },
   trainCost(g) {
     const ri = this.rarityIdx(g.rarity);
@@ -758,6 +758,18 @@ export const G = {
   },
 
   // ------------------------------------------------------------- Injuries & medics
+  // ---- battle wounds: health carries into the next fight and recovers slowly in town
+  hpFrac(g) {
+    if (!g || g.hpf === undefined || g.hpf >= 1) return 1;
+    return Math.min(1, g.hpf + (this.now() - (g.hpAt || 0)) / RECOVER_MS);
+  },
+  recordWounds(b) {
+    for (const u of b.units) {
+      if (u.side !== 'g' || !u.gob || !u.alive) continue;
+      const g = this.gob(u.gob); if (!g) continue;
+      g.hpf = Math.max(0.01, Math.min(1, u.hp / u.maxHp)); g.hpAt = this.now();
+    }
+  },
   // goblins (uids) who fell in battle; returns the list actually injured
   casualties(b) { return b.units.filter(u => u.side === 'g' && !u.alive && u.gob).map(u => u.gob); },
   injure(uids) {
@@ -777,7 +789,7 @@ export const G = {
   medics() { return this.workers('infirmary').filter(g => g.job === 'medic'); },
   healSlots() { return this.isBuilt('infirmary') && !this.isConstructing('infirmary') ? this.medics().length : 0; },
   healGoblin(g) {
-    g.inj = null;
+    g.inj = null; g.hpf = 1; g.hpAt = this.now();
     const p = g.prev; g.prev = null; g.assign = null;
     if (p && this.validAssign(p)) g.assign = p;
     this.emit('healed', g);
@@ -983,6 +995,7 @@ export const G = {
     const team = this.defenders().map(g => this.goblinCombat(g, true));
     if (!team.length) return this.resolveInvasion(false);
     const b = resolveInstant(team, this.rt.invasion.enemies);
+    this.recordWounds(b);
     return this.resolveInvasion(b.winner === 'g', this.casualties(b));
   },
 

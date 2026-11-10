@@ -170,6 +170,7 @@ export const MILESTONES = [25, 50, 100, 200, 300, 400, 500, 600, 800, 1000];
 
 export const DECOR_SIZE = { campfire: [2, 2], chiefhut: [3, 3], fountain: [3, 2], statue: [2, 2] };
 export const HEAL_MS = 120000;
+export const RECOVER_MS = 90000; // time for a wounded goblin to go from 0 to full health in town
 export const MEDIC_NAMES = ['Nurse Bandagewart', 'Doc Scabbins', 'Sister Stitchgob', 'Medic Mossfoot', 'Dr. Pokewell', 'Nurse Plasterpants', 'Healer Hobnob', 'Doc Leechlove', 'Sawbones Snik', 'Nurse Gauzegrin'];
 export const DECOR = [
   { type: 'campfire', tx: 29, ty: 25 },

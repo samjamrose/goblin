@@ -97,10 +97,7 @@ async function boot() {
       G.save();
       ui.closeModal();
       sfx('levelup');
-      ui.toast('Tap the Mushroom Patch to grow your empire!', 'info', 'shroom');
-      const b = G.pos('shroom');
-      world.pointer = { x: (b.tx + b.w / 2) * TILE, y: b.ty * TILE - 12 };
-      setTimeout(() => { world.pointer = null; }, 9000);
+      ui.toast('Open Build (red dot) and build a Mushroom Patch!', 'info', 'shroom');
     };
   } else {
     ui.showOffline(offline);

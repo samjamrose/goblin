@@ -6,7 +6,7 @@ let UID = 1;
 export function makeUnit(side, o) {
   return {
     id: UID++, side, name: o.name, kind: o.kind, look: o.look, gob: o.gob, boss: !!o.boss, tint: o.tint,
-    maxHp: o.hp, hp: o.hp, atk: o.atk, spd: o.spd || 1, crit: o.crit || 0.05, splash: o.splash || 0,
+    maxHp: o.hp, hp: o.hpNow !== undefined ? Math.max(1, o.hpNow) : o.hp, atk: o.atk, spd: o.spd || 1, crit: o.crit || 0.05, splash: o.splash || 0,
     cd: 0.4 + Math.random() * 0.8, alive: true, anim: 0, hurt: 0, rarity: o.rarity,
   };
 }
