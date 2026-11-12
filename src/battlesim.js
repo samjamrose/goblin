@@ -6,17 +6,19 @@ let UID = 1;
 // ---- Goblin attack buttons (one per goblin, by job) and enemy special attacks.
 // Basic attacks still happen automatically; skills add a light layer of timing strategy.
 export const SKILLS = {
-  warrior: { name: 'Shield Bash', icon: 'shield', cd: 8, desc: 'Big hit on the front enemy and stuns it (cancels its special).', kind: 'hit', mult: 2.4, stun: 1.8 },
-  thief: { name: 'Backstab', icon: 'dagger', cd: 7, desc: 'Huge hit on your target (or the weakest). Double damage on a stunned enemy!', kind: 'weak', mult: 3.5 },
-  alchemist: { name: 'Boom Flask', icon: 'potion', cd: 9, desc: 'Splashes every enemy.', kind: 'all', mult: 1.5 },
-  scout: { name: 'Volley', icon: 'map', cd: 6, desc: 'Three quick shots: your target first, then the others.', kind: 'volley', mult: 1, hits: 3 },
-  miner: { name: 'Rock Slam', icon: 'pick', cd: 8, desc: 'Heavy hit that briefly stuns.', kind: 'hit', mult: 2.4, stun: 1 },
-  smith: { name: 'Hot Iron', icon: 'hammer', cd: 8, desc: 'Searing hit on the front enemy.', kind: 'hit', mult: 3 },
-  builder: { name: 'Barricade', icon: 'castle', cd: 12, desc: 'Shields the whole team for 5s. Use it before a big enemy attack!', kind: 'shield', mult: 2.5, dur: 5 },
-  farmer: { name: 'Shroom Snack', icon: 'shroom', cd: 11, desc: 'Heals the most hurt goblin.', kind: 'heal', mult: 0.35 },
-  brewer: { name: 'Grog Round', icon: 'mug', cd: 14, desc: 'Team attack +50% for 6s.', kind: 'rally', mult: 0.5, dur: 6 },
-  merchant: { name: 'Coin Toss', icon: 'coin', cd: 8, desc: 'Pelts the front enemy with coins.', kind: 'hit', mult: 2.6 },
-  gambler: { name: 'Hot Streak', icon: 'dice', cd: 7, desc: 'Hits harder every time you use it this battle (up to 5x).', kind: 'streak', mult: 1.5 },
+  // heavy hitters: long cooldowns (7-9s)
+  warrior: { name: 'Shield Bash', icon: 'shield', cd: 8, desc: 'Big hit on your target and stuns it (cancels its special).', kind: 'hit', mult: 2.4, stun: 1.8 },
+  thief: { name: 'Backstab', icon: 'dagger', cd: 9, desc: 'Huge hit on your target (or the weakest). Double damage on a stunned enemy!', kind: 'weak', mult: 3.6 },
+  alchemist: { name: 'Boom Flask', icon: 'potion', cd: 9, desc: 'Splashes every enemy.', kind: 'all', mult: 1.6 },
+  smith: { name: 'Hot Iron', icon: 'hammer', cd: 9, desc: 'Searing hit on your target.', kind: 'hit', mult: 3.4 },
+  builder: { name: 'Barricade', icon: 'castle', cd: 9, desc: 'Shields the whole team for 5s. Use it before a big enemy attack!', kind: 'shield', mult: 2.5, dur: 5 },
+  brewer: { name: 'Grog Round', icon: 'mug', cd: 9, desc: 'Team attack +50% for 6s.', kind: 'rally', mult: 0.5, dur: 6 },
+  // quick jabs: weaker, but ready every 2-3s
+  merchant: { name: 'Coin Toss', icon: 'coin', cd: 2.5, desc: 'Quick flick of a coin at your target.', kind: 'hit', mult: 0.8 },
+  scout: { name: 'Quick Shot', icon: 'map', cd: 2, desc: 'Fast arrow: your target first, then the others.', kind: 'volley', mult: 0.6, hits: 1 },
+  miner: { name: 'Pebble Toss', icon: 'pick', cd: 3, desc: 'Fast rock that dazes the target for a moment.', kind: 'hit', mult: 0.9, stun: 0.4 },
+  gambler: { name: 'Hot Streak', icon: 'dice', cd: 3, desc: 'Quick jab that grows every time you use it this battle (up to 3x).', kind: 'streak', mult: 0.6, step: 0.3, max: 3 },
+  farmer: { name: 'Shroom Snack', icon: 'shroom', cd: 3, desc: 'Small heal for the most hurt goblin.', kind: 'heal', mult: 0.12 },
   medic: { name: 'Patch Up', icon: 'heart', cd: 10, desc: 'Heals the most hurt goblin.', kind: 'heal', mult: 0.4 },
 };
 const ENEMY_SPECIAL = { cd: 11, windup: 1.8, mult: 3 };
@@ -85,7 +87,7 @@ export function useSkill(b, u) {
     case 'weak': { const t = b.focus && foes.find(e => e.id === b.focus) || foes.reduce((a, c) => (c.hp < a.hp ? c : a), foes[0]); damage(b, t, atk * S.mult * (t.stun > 0 ? 2 : 1), u.id, true); break; }
     case 'all': for (const f of foes) damage(b, f, atk * S.mult, u.id, false); break;
     case 'volley': { const first = focusTarget(b, foes); const order = [first, ...foes.filter(f => f !== first)]; for (let i = 0; i < S.hits; i++) { const live = order.filter(f => f.alive); if (!live.length) break; damage(b, live[i % live.length], atk * S.mult, u.id, false); } break; }
-    case 'streak': { const m = Math.min(5, S.mult + u.streak * 0.75); u.streak++; damage(b, focusTarget(b, foes), atk * m, u.id, m >= 3); break; }
+    case 'streak': { const m = Math.min(S.max || 5, S.mult + u.streak * (S.step || 0.75)); u.streak++; damage(b, focusTarget(b, foes), atk * m, u.id, m >= 3); break; }
     case 'shield': b.shield = Math.max(b.shield, atk * S.mult * team.length); b.shieldT = S.dur; break;
     case 'rally': b.rally = S.dur; break;
     case 'heal': { const t = team.reduce((a, c) => (c.hp / c.maxHp < a.hp / a.maxHp ? c : a), team[0]); const v = t.maxHp * S.mult; t.hp = Math.min(t.maxHp, t.hp + v); b.fx.push({ type: 'heal', unit: t.id, v }); break; }

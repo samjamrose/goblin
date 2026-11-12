@@ -845,6 +845,29 @@ const BUILD_DRAW = {
 
 // Decorations
 const DECOR_DRAW = {
+  // the Great Hoard on Hoard Hill: grows with your lifetime gold (tier 0-4)
+  hoardmound(p, W, H, t) {
+    const cx = W / 2, base = H - 6;
+    const rw = 26 + t * 4, rh = 12 + t * 5;
+    for (let i = 0; i < rh; i++) {
+      const w = Math.round(rw * Math.sqrt(1 - Math.pow(i / rh, 1.6)));
+      for (let x = -w; x <= w; x++) p.px(cx + x, base - i, ((x * 7 + i * 3) % 5 === 0) ? '#fff080' : ((x + i) % 3 === 0 ? '#d8a020' : '#f0c020'));
+    }
+    // coins rolling off the pile
+    for (let k = 0; k < 10 + t * 4; k++) { const x = cx - rw - 4 + ((k * 23) % (rw * 2 + 8)), y = base - (k % 3); p.rect(x, y, 2, 1, '#e8b020'); }
+    // gems & treasure poking out
+    const gems = ['#e02a4a', '#2a8ae0', '#2ae08a', '#c050ff'];
+    for (let k = 0; k < 4 + t * 2; k++) { const x = cx - rw + 6 + ((k * 17) % (rw * 2 - 12)), y = base - 2 - ((k * 5) % Math.max(3, rh - 4)); p.rect(x, y, 2, 2, gems[k % 4]); p.px(x, y, '#fff'); }
+    // chest on the side
+    p.rect(cx - rw - 2, base - 8, 9, 7, '#8a5a30'); p.hline(cx - rw - 2, base - 8, 9, '#a07040'); p.hline(cx - rw - 2, base - 5, 9, '#5a3a20'); p.px(cx - rw + 2, base - 5, '#f0c020');
+    // dragon skull crowning the hoard
+    const top = base - rh;
+    p.rect(cx - 5, top - 7, 10, 6, '#f0e8d0'); p.rect(cx - 7, top - 4, 3, 2, '#f0e8d0'); p.rect(cx + 4, top - 4, 3, 2, '#f0e8d0');
+    p.px(cx - 3, top - 5, '#1a1a1a'); p.px(cx + 2, top - 5, '#1a1a1a'); p.hline(cx - 3, top - 2, 6, '#c8c0b0');
+    p.px(cx - 6, top - 9, '#f0e8d0'); p.px(cx - 7, top - 10, '#f0e8d0'); p.px(cx + 5, top - 9, '#f0e8d0'); p.px(cx + 6, top - 10, '#f0e8d0');
+    if (t >= 2) { p.rect(cx - 3, top - 12, 6, 3, '#f0c020'); p.px(cx - 3, top - 13, '#f0c020'); p.px(cx, top - 13, '#f0c020'); p.px(cx + 2, top - 13, '#f0c020'); p.px(cx - 1, top - 11, '#e02a4a'); }
+    if (t >= 4) { for (const [x, y] of [[cx - 14, top + 2], [cx + 12, top + 4], [cx + 2, top - 16]]) { p.px(x, y, '#fff'); p.px(x - 1, y, '#ffe060'); p.px(x + 1, y, '#ffe060'); p.px(x, y - 1, '#ffe060'); p.px(x, y + 1, '#ffe060'); } }
+  },
   campfire(p, W, H) {
     p.oval(W / 2, H - 8, 7, 3, '#7a7a7a');
     p.oval(W / 2, H - 8, 5, 2, '#3a2a1a');

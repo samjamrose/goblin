@@ -94,6 +94,8 @@ async function boot() {
     world.agents.clear(); world.bubbleTalk = []; world.placing = null;
     world.buildGrid(); world.terrainDirty = true;
   });
+  G.on('teethEarned', (n) => { if (G.s.tut.intro) ui.toast(`🦷 +${fmt(n)} Golden Teeth! (+${fmt(n * 2)}% income forever)`, 'ach', 'tooth'); });
+  G.on('digSpawn', () => ui.toast('✨ Something shiny is buried on Hoard Hill! Tap the X to dig.', 'good', 'chest'));
   G.on('trackUnlocked', (id) => { sfx('achieve'); ui.toast(`🎵 New track at the DJ Stand: ${TRACKS[id].name}!`, 'ach', 'music'); });
   G.on('medicGems', (n) => ui.toast(`Your infirmary is fully staffed: a medic reward became ${n} gems!`, 'good', 'gem'));
   G.on('healed', (g) => { if (!battle.active) ui.toast(`${g.name} is healed and back to work!`, 'good', 'heart'); });

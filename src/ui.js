@@ -2,7 +2,7 @@
 import {
   RARITIES, JOBS, TRAITS, BUILDINGS, BUILDING_BY_ID, BIZ, DISTRICTS, DISTRICT_BY_ID, REGIONS, REGION_BY_ID, STAGES_PER_REGION,
   MISSIONS, TREASURES, TREASURE_SETS, RESEARCH, PERKS, NAMED, NAMED_BY_ID, ABILITY_TEXT, DAILY_TEMPLATES, STORY, ACHIEVEMENTS,
-  LOGIN_REWARDS, PRESTIGE_MIN_GOLD, xpForLevel, ENEMIES, MILESTONES, RANKS, TILE, TRACK_UNLOCKS,
+  LOGIN_REWARDS, PRESTIGE_MIN_GOLD, teethFor, xpForLevel, ENEMIES, MILESTONES, RANKS, TILE, TRACK_UNLOCKS,
 } from './data.js';
 import { fmt, fmtTime, clamp, pct } from './util.js';
 import { winMargin } from './battlesim.js';
@@ -277,6 +277,7 @@ export class UI {
         })}></button>`).join('')}</div>`;
         h += this.workerSlotsHtml(id);
         if (id === 'market') h += this.bazaarHtml();
+        if (id === 'casino') h += this.casinoHtml();
         h += this.moveBtn(id);
       }
     } else {
@@ -361,85 +362,76 @@ export class UI {
     h += `<p class="small muted">Battles have their own music, and bosses get something even louder.</p>`;
     return h;
   }
-  // ---- "Pack Up the Capital" explained as a little animated comic before confirming
-  prestigeComic(onConfirm) {
-    const G = this.G, s = G.s, gain = G.teethGain();
-    const look = (i) => { const g = s.goblins[i % Math.max(1, s.goblins.length)]; return g ? g.look : { skin: '#6cbf45', hat: 'none', outfit: '#8a5a32', tool: 'sack' }; };
-    const slides = [
-      { title: 'Your capital is bursting!', text: `${esc(s.name)} earned <b class="gold-t">${fmt(s.runGold)} gold</b> this run. The swamp is FULL. There's no room left for more!`, scene: 'city' },
-      { title: 'Pack EVERYTHING!', text: 'Your goblins grab everything that isn’t nailed down. Then they grab the nails too.', scene: 'pack' },
-      { title: 'The Great Goblin March', text: 'They march off to a fresh, even muddier swamp. Buildings, gold, districts and research stay behind.', scene: 'march' },
-      { title: 'Golden Teeth!', text: `All that work turns into <b class="gold-t">+${fmt(gain)} Golden Teeth</b>. Each tooth gives <b>+2% to ALL income, forever</b>, and you can spend them on perks in the Tooth Shrine.`, scene: 'teeth' },
-      { title: 'Day 1 of a new capital', text: '', scene: 'camp', last: true },
-    ];
-    let i = 0, raf = 0, t0 = performance.now();
-    const W = 240, H = 135;
-    const draw = (ctx, scene, t) => {
-      ctx.imageSmoothingEnabled = false;
-      const sky = ctx.createLinearGradient(0, 0, 0, H);
-      sky.addColorStop(0, scene === 'teeth' ? '#3a2a10' : scene === 'march' ? '#ffb070' : '#8fd3ff'); sky.addColorStop(1, scene === 'teeth' ? '#1c1424' : '#e8f4d0');
-      ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
-      const ground = (y, c) => { ctx.fillStyle = c; ctx.fillRect(0, y, W, H - y); };
-      const gob = (lk, x, y, f, flip, sc = 1) => { const sh = goblinSheet(lk); ctx.drawImage(flip ? sh.flip : sh.sheet, f * GOB_W, 0, GOB_W, GOB_H, Math.round(x), Math.round(y), GOB_W * sc, GOB_H * sc); };
-      if (scene === 'city') {
-        ground(100, '#5fa83e');
-        const ids = ['palace', 'bank', 'casino', 'market', 'tavern', 'mine', 'shroom'].filter(id => G.isBuilt(id)).slice(0, 3);
-        (ids.length ? ids : ['tavern', 'mine']).forEach((id, k) => { const b = BUILDING_BY_ID[id]; const spr = buildingSprite(id, b.w, b.h, G.tier(id)); const sc = Math.min(1, 60 / spr.height); ctx.drawImage(spr, 12 + k * 78, 100 - spr.height * sc, spr.width * sc, spr.height * sc); });
-        for (let k = 0; k < 14; k++) { const x = 10 + ((k * 37) % 220), y = 102 + ((k * 13) % 26); ctx.drawImage(iconCanvas('coin'), x, y - Math.abs(Math.sin(t * 3 + k)) * 3); }
-        for (let k = 0; k < 4; k++) gob(look(k), 20 + k * 55, 100, Math.floor(t * 4 + k) % 2 ? 8 : 0, k % 2);
-      } else if (scene === 'pack') {
-        ground(100, '#7a6a3a');
-        ctx.fillStyle = '#8a5a30'; ctx.fillRect(150, 82, 70, 20); ctx.fillStyle = '#5a3a20'; ctx.fillRect(150, 82, 70, 3);
-        ctx.fillStyle = '#2a2a2a'; ctx.beginPath(); ctx.arc(162, 104, 6, 0, 7); ctx.arc(208, 104, 6, 0, 7); ctx.fill();
-        const boxes = ['#c8a060', '#a07040', '#d8b070', '#b08050'];
-        boxes.forEach((c, k) => { ctx.fillStyle = c; ctx.fillRect(154 + k * 16, 66 - (k % 2) * 8, 14, 16); ctx.fillStyle = '#5a3a20'; ctx.fillRect(154 + k * 16 + 6, 66 - (k % 2) * 8, 2, 16); });
-        for (let k = 0; k < 3; k++) { const hop = Math.abs(Math.sin(t * 6 + k)) * 6; gob({ ...look(k), tool: 'sack' }, 20 + k * 40, 76 - hop, 2 + Math.floor(t * 8 + k) % 4, false); }
-        ctx.drawImage(iconCanvas('hammer'), 120 + Math.sin(t * 4) * 10, 30 + ((t * 40) % 40));
-        ctx.drawImage(iconCanvas('coin'), 100, 20 + ((t * 50) % 60));
-      } else if (scene === 'march') {
-        const off = (t * 30) % 80;
-        ctx.fillStyle = '#c87a50';
-        for (let x = -80; x < W + 80; x += 80) { ctx.beginPath(); ctx.moveTo(x - off, 100); ctx.lineTo(x + 40 - off, 55); ctx.lineTo(x + 80 - off, 100); ctx.fill(); }
-        ground(100, '#6a9a3a');
-        ctx.fillStyle = '#8a7a4a'; ctx.fillRect(0, 108, W, 6);
-        for (let k = 0; k < 6; k++) gob({ ...look(k), tool: k % 2 ? 'sack' : look(k).tool }, 10 + k * 36, 86 + (k % 2), 2 + Math.floor(t * 8 + k) % 4, false);
-        ctx.font = '10px sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText('"Are we there yet?"', 120, 40);
-      } else if (scene === 'teeth') {
-        const pulse = 1 + Math.sin(t * 4) * 0.06, sz = 60 * pulse;
-        ctx.drawImage(iconCanvas('tooth'), W / 2 - sz / 2, 30 - (sz - 60) / 2, sz, sz);
-        for (let k = 0; k < 16; k++) { const a = t * 1.5 + k * 0.39, r = 50 + Math.sin(t * 3 + k) * 6; ctx.fillStyle = k % 2 ? '#ffe060' : '#fff8c0'; ctx.fillRect(W / 2 + Math.cos(a) * r, 60 + Math.sin(a) * r * 0.6, 2, 2); }
-        ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe060'; ctx.fillText('+' + fmt(gain), W / 2, 122); ctx.textAlign = 'left';
-      } else {
-        ground(96, '#5fa83e');
-        ctx.fillStyle = '#7a6a3a'; ctx.beginPath(); ctx.ellipse(W / 2, 112, 70, 12, 0, 0, 7); ctx.fill();
-        const f = Math.floor(t * 10) % 3;
-        ctx.fillStyle = '#ff7a20'; ctx.beginPath(); ctx.moveTo(W / 2 - 6, 110); ctx.lineTo(W / 2 + f - 1, 96); ctx.lineTo(W / 2 + 6, 110); ctx.fill();
-        for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2; gob(look(k), W / 2 - 13 + Math.cos(a) * 52, 86 + Math.sin(a) * 8, Math.floor(t * 3 + k) % 4 === 0 ? 8 : 0, Math.cos(a) > 0); }
-        ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = '#1c1424'; ctx.fillText('DAY 1', 8, 18);
-      }
-      ctx.strokeStyle = '#1c1424'; ctx.lineWidth = 3; ctx.strokeRect(1.5, 1.5, W - 3, H - 3);
+  // ---- Lucky Rat Casino: slots, rat race, coin flip
+  casinoHtml() {
+    const G = this.G, st = G.s.stats, idx = this.stakeIdx || 0;
+    let h = `<h3>🎰 Gamble</h3><div class="card row" style="background:linear-gradient(#5a1a2a,#2a0a14)"><img src="${goblinPortrait({ skin: '#7dcc52', hat: 'visor', outfit: '#2a6a3a', tool: 'dice', ears: 1, nose: 2, eyes: 1, teeth: 2 }, 2)}" style="width:48px"><div class="grow small"><b>Dicey the Dealer</b><br><i>"The house always wins. Usually. Sometimes. Feeling lucky?"</i></div></div>`;
+    h += `<div class="small muted">Your bet:</div><div class="amt">${G.stakes().map((k, i) => `<button class="${i === idx ? 'on' : ''}" data-act="stake" data-i="${i}" ${this.b(el => { const v = G.stakes()[i].v; el.innerHTML = `${k.label}<br><small>${fmt(v)}</small>`; el.classList.toggle('no', G.s.gold < v); })}></button>`).join('')}</div>`;
+    h += `<div class="list-item"><img src="${icon('dice')}" class="ic b"><div class="grow small"><b>Goblin Slots</b><br>3 matching: up to ×60 (👑). Any pair: ×1.4. A 💀 loses.</div><button class="btn small purple" data-act="gamble" data-g="slots">Spin</button></div>`;
+    h += `<div class="list-item"><img src="${icon('rat')}" class="ic b"><div class="grow small"><b>Rat Race</b><br>Pick 1 of 4 rats. Winner pays ×3.7.</div><button class="btn small purple" data-act="gamble" data-g="race">Bet</button></div>`;
+    h += `<div class="list-item"><img src="${icon('coin')}" class="ic b"><div class="grow small"><b>Coin Flip</b><br>Call it. Right pays ×1.9.</div><button class="btn small purple" data-act="gamble" data-g="flip">Flip</button></div>`;
+    h += `<p class="small muted">Bets played: ${st.bets || 0} · Wins: ${st.betWins || 0}${st.bestWin ? ' · Best win: ' + fmt(st.bestWin) : ''}. Winnings don't count toward Golden Teeth.</p>`;
+    return h;
+  }
+  gambleModal(game) {
+    const G = this.G, stake = G.stakes()[this.stakeIdx || 0].v;
+    if (G.s.gold < stake) { sfx('error'); this.toast('Not enough gold for that bet!', 'bad', 'coin'); return; }
+    const again = `<button class="btn purple" data-act="gamble" data-g="${game}">Play again (${fmt(stake)})</button><button class="btn ghost" data-act="close-modal">Done</button>`;
+    const result = (r, html) => {
+      const won = r.mult > 1, even = r.mult === 1;
+      sfx(won ? (r.mult >= 8 ? 'epic' : 'victory') : 'defeat');
+      if (won) this.flyCoins(innerWidth / 2, innerHeight / 2, Math.min(16, 4 + Math.round(r.mult)));
+      return `${html}<h2 class="${won ? 'green-t' : 'red-t'}" style="margin-top:8px">${won ? `YOU WIN ${fmt(r.win)}!` : even ? 'Broke even' : `Lost ${fmt(r.stake)}`}</h2><div class="modal-actions">${again}</div>`;
     };
-    const render = () => {
-      const sl = slides[i];
-      const keep = '<div class="row" style="align-items:flex-start;gap:6px;text-align:left"><div class="card grow small" style="margin:0"><b class="green-t">You KEEP</b><br>Goblins, levels & stars<br>Gear & treasures<br>Gems<br>Conquered regions<br>Huts, Cauldron, Infirmary, DJ Stand<br>Achievements & teeth</div><div class="card grow small" style="margin:0"><b class="red-t">Starts over</b><br>Business buildings<br>Gold (mushrooms 10%)<br>Capital level<br>Districts<br>Research</div></div>';
-      this.modal(`<div class="small muted">Pack Up the Capital · ${i + 1}/${slides.length}</div><h2 style="margin:2px 0 6px">${sl.title}</h2>
-        <canvas id="comic" width="${W}" height="${H}" style="width:100%;image-rendering:pixelated;border-radius:8px;cursor:pointer"></canvas>
-        ${sl.last ? keep : `<p>${sl.text}</p>`}
-        <div class="row" style="justify-content:center;gap:5px;margin:6px 0">${slides.map((_, k) => `<i style="width:8px;height:8px;border-radius:50%;background:${k === i ? '#e8a020' : 'rgba(0,0,0,.2)'}"></i>`).join('')}</div>
-        <div class="modal-actions">${i > 0 ? '<button class="btn ghost" id="cm-back">Back</button>' : '<button class="btn ghost" id="cm-cancel">Not yet</button>'}
-        ${sl.last ? `<button class="btn gold" id="cm-go">Pack Up & Move! (+${fmt(gain)} 🦷)</button>` : '<button class="btn" id="cm-next">Next ›</button>'}</div>`, { onClose: () => cancelAnimationFrame(raf) });
-      const cv = document.getElementById('comic'), ctx = cv.getContext('2d');
-      const loop = () => { draw(ctx, sl.scene, (performance.now() - t0) / 1000); raf = requestAnimationFrame(loop); };
-      cancelAnimationFrame(raf); loop();
-      const next = () => { if (i < slides.length - 1) { i++; sfx('whoosh'); render(); } };
-      cv.onclick = next;
-      const q = (id) => document.getElementById(id);
-      if (q('cm-next')) q('cm-next').onclick = next;
-      if (q('cm-back')) q('cm-back').onclick = () => { i--; render(); };
-      if (q('cm-cancel')) q('cm-cancel').onclick = () => this.closeModal();
-      if (q('cm-go')) q('cm-go').onclick = () => { cancelAnimationFrame(raf); this.closeModal(); onConfirm(); };
-    };
-    render();
+    if (game === 'slots') {
+      const r = G.playSlots(stake); if (!r) return;
+      const syms = G.SLOT_SYMBOLS.map(x => x[0]);
+      const box = (i, sym) => `<span class="reel" id="reel${i}"><img src="${icon(sym, 4)}"></span>`;
+      this.modal(`<h2>Goblin Slots</h2><div class="reels">${[0, 1, 2].map(i => box(i, syms[i])).join('')}</div><div id="slot-res"><p class="small muted">Spinning...</p></div>`, { dark: true, dismissable: false });
+      let ticks = 0; sfx('recruit');
+      const iv = setInterval(() => {
+        ticks++;
+        for (let i = 0; i < 3; i++) { if (ticks > 8 + i * 5) continue; const el = document.getElementById('reel' + i); if (el) el.innerHTML = `<img src="${icon(syms[(ticks + i * 2) % syms.length], 4)}">`; }
+        for (let i = 0; i < 3; i++) if (ticks === 9 + i * 5) { const el = document.getElementById('reel' + i); if (el) { el.innerHTML = `<img src="${icon(r.reels[i], 4)}">`; el.classList.add('stop'); } sfx('tap'); }
+        if (ticks >= 20) { clearInterval(iv); const el = document.getElementById('slot-res'); if (el) el.innerHTML = result(r, ''); this.modalDismissable = true; this.refresh(); }
+      }, 80);
+    } else if (game === 'race') {
+      const cols = ['#ff6a6a', '#6ab0ff', '#7aff6a', '#ffd040'], names = ['Squeaky', 'Nibbles', 'Turbo', 'Sir Whiskers'];
+      this.modal(`<h2>Rat Race</h2><p class="small">Pick your rat! Bet: <b>${fmt(stake)}</b> · Pays ×3.7</p><div class="ev-choices">${names.map((n, i) => `<button class="btn" style="background:${cols[i]};color:#1c1424;text-shadow:none" data-act="race-pick" data-i="${i}">🐀 ${n}</button>`).join('')}</div><div class="modal-actions"><button class="btn ghost" data-act="close-modal">Cancel</button></div>`, { dark: true });
+      this.racePick = (pick) => {
+        const r = G.playRace(stake, pick); if (!r) return;
+        this.modal(`<h2>Rat Race</h2><canvas id="race" width="240" height="120" style="width:100%;image-rendering:pixelated;border-radius:8px;background:#5a8a3a"></canvas><div id="race-res"><p class="small muted">You picked ${names[pick]}!</p></div>`, { dark: true, dismissable: false });
+        const cv = document.getElementById('race'), ctx = cv.getContext('2d'); const t0 = performance.now(), dur = 3200;
+        // each rat gets a wobbly pace; the predetermined winner crosses first
+        const seeds = [0, 1, 2, 3].map(() => Math.random() * 6);
+        const pos = (i, k) => { const base = i === r.winner ? k : k * (0.86 + 0.08 * ((i * 7 + 3) % 4) / 3); return Math.min(1, base + Math.sin(k * 9 + seeds[i]) * 0.04 * (1 - k)); };
+        sfx('battle');
+        const frame = () => {
+          const k = Math.min(1, (performance.now() - t0) / dur);
+          ctx.fillStyle = '#5a8a3a'; ctx.fillRect(0, 0, 240, 120);
+          for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#7a6a3a' : '#8a7a4a'; ctx.fillRect(0, 10 + i * 26, 240, 22); }
+          ctx.fillStyle = '#fff'; for (let y = 10; y < 114; y += 6) ctx.fillRect(216, y, 3, 3);
+          for (let i = 0; i < 4; i++) {
+            const x = 10 + pos(i, k) * 200, y = 26 + i * 26, leg = Math.floor(performance.now() / 60) % 2;
+            ctx.fillStyle = '#1c1424'; ctx.fillRect(x - 6, y - 7, 13, 7); ctx.fillStyle = '#8a8a8a'; ctx.fillRect(x - 5, y - 6, 11, 5); ctx.fillRect(x + 5, y - 7, 3, 3);
+            ctx.fillStyle = '#ffb0b0'; ctx.fillRect(x - 10, y - 4, 5, 1); ctx.fillRect(x + 8, y - 5, 1, 1);
+            ctx.fillStyle = cols[i]; ctx.fillRect(x - 2, y - 9, 5, 3);
+            ctx.fillStyle = '#5a5a5a'; ctx.fillRect(x - 3 + leg, y - 1, 1, 1); ctx.fillRect(x + 3 - leg, y - 1, 1, 1);
+          }
+          if (k < 1) requestAnimationFrame(frame);
+          else { const el = document.getElementById('race-res'); if (el) el.innerHTML = result(r, `<p>${names[r.winner]} wins!</p>`); this.modalDismissable = true; this.refresh(); }
+        };
+        frame();
+      };
+    } else {
+      this.modal(`<h2>Coin Flip</h2><p class="small">Bet: <b>${fmt(stake)}</b> · Pays ×1.9</p><div class="row" style="justify-content:center"><button class="btn gold" data-act="flip-pick" data-s="heads">Heads</button><button class="btn" data-act="flip-pick" data-s="tails">Tails</button></div><div class="modal-actions"><button class="btn ghost" data-act="close-modal">Cancel</button></div>`, { dark: true });
+      this.flipPick = (side) => {
+        const r = G.playFlip(stake, side); if (!r) return;
+        this.modal(`<h2>Coin Flip</h2><div class="flipcoin"><img src="${icon('coin', 8)}"></div><div id="flip-res"><p class="small muted">You called ${side}...</p></div>`, { dark: true, dismissable: false });
+        sfx('throw');
+        setTimeout(() => { const el = document.getElementById('flip-res'); if (el) el.innerHTML = result(r, `<p>It landed on <b>${r.result.toUpperCase()}</b>!</p>`); this.modalDismissable = true; this.refresh(); }, 1300);
+      };
+    }
   }
   bazaarHtml() {
     const G = this.G;
@@ -772,7 +764,7 @@ export class UI {
     const G = this.G, s = G.s;
     const rows = [
       ['Capital founded', new Date(s.created).toLocaleDateString()], ['Play time', fmtTime(s.stats.playTime)], ['Gold earned (all time)', fmt(s.lifetimeGold)],
-      ['Gold earned (this run)', fmt(s.runGold)], ['Prestiges', s.stats.prestiges], ['Golden Teeth earned', fmt(s.teethEarned)],
+      ['Golden Teeth earned', fmt(s.teethEarned)],
       ['Goblins recruited', s.stats.recruits], ['Building upgrades', fmt(s.stats.upgrades)], ['Battles won / lost', `${s.stats.battlesWon} / ${s.stats.battlesLost}`],
       ['Bosses defeated', s.stats.bosses], ['Expeditions', s.stats.expeditions], ['Golden Goblins caught', s.stats.golden], ['Coin bubbles popped', s.stats.bubbles],
       ['Fires put out', s.stats.fires], ['Rats squashed', s.stats.rats], ['Invasions repelled', s.stats.invasionsWon], ['Incidents handled', s.stats.events], ['Trades', s.stats.trades],
@@ -784,9 +776,9 @@ export class UI {
   pMore(sub = 'shop') {
     const G = this.G;
     this.title('More');
-    const pDot = G.canPrestige() && G.teethGain() >= Math.max(10, G.s.teethEarned * 0.5);
-    this.tabs([['shop', 'Market'], ['prestige', 'Prestige', pDot], ['league', 'Rankings', !!G.s.leaguePending], ['settings', 'Settings']], sub, 'more');
-    if (sub === 'prestige') return this.pPrestige();
+    const pDot = this.perkAffordable();
+    this.tabs([['shop', 'Market'], ['shrine', 'Tooth Shrine', pDot], ['league', 'Rankings', !!G.s.leaguePending], ['settings', 'Settings']], sub, 'more');
+    if (sub === 'shrine' || sub === 'prestige') return this.pPrestige();
     if (sub === 'league') return this.pLeague();
     if (sub === 'settings') return this.pSettings();
     let h = '';
@@ -805,18 +797,16 @@ export class UI {
     h += `<h3>Brag</h3><button class="btn blue wide" data-act="share">${iconImg('share')} Share my capital</button>`;
     this.setBody(h);
   }
+  perkAffordable() { const G = this.G; return PERKS.some(p => G.perk(p.id) < p.max && G.s.teeth >= p.cost[G.perk(p.id)]); }
   pPrestige() {
     const G = this.G, s = G.s;
-    const gain = G.teethGain();
+    const nextAt = (() => { let g = s.lifetimeGold; for (let i = 0; i < 200 && Math.floor(teethFor(g)) <= s.teethEarned; i++) g = Math.max(g * 1.15, 1e9); return g; })();
     let h = `<div class="card center" style="background:linear-gradient(#5a4a10,#3a2a08)">
-      <img src="${icon('tooth', 6)}" style="width:60px"><div class="bname">Pack Up the Capital</div>
-      <p class="small">Your goblins grab everything that isn't nailed down (and the nails), and move to a fresh swamp. You keep your <b>goblins, gear, treasures, gems, region conquests</b>, Mud Huts and Cauldron. Buildings, gold, districts and research reset.</p>
-      <p>Golden Teeth: <b class="gold-t">${fmt(s.teethEarned)}</b> (+${fmt(s.teethEarned * 2)}% income)</p>
-      <p>Moving now earns: <b class="gold-t" ${this.b(el => el.textContent = '+' + fmt(G.teethGain()) + ' teeth')}></b></p>
-      ${s.runGold < PRESTIGE_MIN_GOLD ? `<p class="small muted">Earn ${fmt(PRESTIGE_MIN_GOLD)} gold in one run to unlock (now ${fmt(s.runGold)}).</p>` : ''}
-      <button class="btn gold wide" data-act="prestige" ${this.b(el => el.classList.toggle('no', !G.canPrestige()))}>Pack Up & Move!</button>
-      <p class="small muted">Tip: teeth grow slower than gold — move when you'd gain roughly as many as you have.</p></div>`;
-    h += `<h3>Tooth Shrine · ${iconImg('tooth')} ${fmt(s.teeth)} to spend</h3><p class="small muted">Spending teeth does NOT reduce your income bonus.</p>`;
+      <img src="${icon('tooth', 6)}" style="width:60px"><div class="bname">Golden Teeth</div>
+      <p class="small">Every bit of gold your capital earns slowly turns into Golden Teeth. No restarting, ever. Each tooth gives <b>+2% to ALL income</b> forever.</p>
+      <p>You have <b class="gold-t">${fmt(s.teethEarned)}</b> teeth (+${fmt(s.teethEarned * 2)}% income)</p>
+      <p class="small muted" ${this.b(el => el.textContent = s.lifetimeGold < 1e9 ? `Your first teeth arrive at ${fmt(1e9)} gold earned (now ${fmt(s.lifetimeGold)}).` : `Next tooth at about ${fmt(nextAt)} gold earned in total.`)}></p></div>`;
+    h += `<h3>Tooth Shrine · ${iconImg('tooth')} ${fmt(s.teeth)} to spend</h3><p class="small muted">Permanent perks. Spending teeth does NOT reduce your income bonus.</p>`;
     for (const p of PERKS) {
       const l = G.perk(p.id), max = l >= p.max;
       h += `<div class="list-item"><div class="grow"><b class="small">${p.name} <span class="tag">${l}/${p.max}</span></b><div class="small muted">${p.desc}</div></div>
@@ -956,7 +946,7 @@ export class UI {
 
   showOffline(r) {
     if (!r) return;
-    this.queueModal(() => this.modal(`<h2>Welcome back, Boss!</h2><p class="small muted">You were away for ${fmtTime(r.away)}${r.capped ? ` (earnings capped at ${fmtTime(r.dt)} — upgrade the cap with prestige perks!)` : ''}. Your goblins kept working... mostly.</p>
+    this.queueModal(() => this.modal(`<h2>Welcome back, Boss!</h2><p class="small muted">You were away for ${fmtTime(r.away)}${r.capped ? ` (earnings capped at ${fmtTime(r.dt)} — upgrade it with Tooth Shrine perks!)` : ''}. Your goblins kept working... mostly.</p>
       <div class="loot"><span>${iconImg('coin')} +${fmt(r.gold)}</span><span>${iconImg('shroom')} +${fmt(r.mush)}</span>${r.ore >= 1 ? `<span>${iconImg('ore')} +${fmt(r.ore)}</span>` : ''}</div>
       ${r.expReady ? `<p class="green-t"><b>${r.expReady} expedition(s) returned!</b></p>` : ''}
       <div class="modal-actions"><button class="btn gold" data-act="close-modal">Collect!</button></div>`, { onClose: () => { sfx('coin'); this.flyCoins(innerWidth / 2, innerHeight / 2, 10); } }));
@@ -1087,7 +1077,7 @@ export class UI {
     else if (g.boss) this.openTab('explore');
     else if (g.research) this.openTab('build', 'research');
     else if (g.goblins || g.rarity) this.openTab('goblins', 'recruit');
-    else if (g.stat && g.stat[0] === 'prestiges') this.openTab('more', 'prestige');
+    else if (g.teeth || (g.stat && g.stat[0] === 'prestiges')) this.openTab('more', 'shrine');
     else if (g.sets) this.openTab('goblins', 'treasures');
     else this.openTab('build', 'biz');
   }
@@ -1195,7 +1185,7 @@ export class UI {
     setB('b-explore', s.expeditions.filter(e => !e.claimed && G.now() >= e.end).length);
     const qn = s.daily.quests.filter(q => !q.claimed && G.dailyProgress(q) >= q.n).length + (s.daily.loginClaimed ? 0 : 1) + (G.storyQuest() && G.storyProgress() >= 1 ? 1 : 0);
     setB('b-quests', qn);
-    setB('b-more', s.leaguePending || (G.canPrestige() && G.teethGain() >= Math.max(10, s.teethEarned * 0.5)) ? true : 0);
+    setB('b-more', s.leaguePending || this.perkAffordable() ? true : 0);
   }
 }
 
@@ -1404,18 +1394,6 @@ UI.prototype.acts = {
   'claim-bonus'() { if (this.G.claimDailyBonus()) { sfx('achieve'); this.toast('+40 gems!', 'good', 'gem'); this.rerender(); } },
   'claim-league'() { const p = this.G.claimLeague(); if (p) { sfx('achieve'); this.toast(`+${p.gems} gems!`, 'good', 'trophy'); this.rerender(); } },
   'perk'(el) { if (this.G.buyPerk(el.dataset.id)) { sfx('milestone'); this.rerender(); } else sfx('error'); },
-  'prestige'() {
-    const G = this.G;
-    if (!G.canPrestige()) { sfx('error'); return; }
-    this.prestigeComic(() => {
-      const n = G.prestige();
-      this.closeSheet();
-      this.world.terrainDirty = true;
-      this.world.focusBuilding('shroom');
-      sfx('levelup');
-      this.modal(`<img src="${icon('tooth', 6)}" style="width:60px"><h2>New Capital, Same Goblins!</h2><p>Your goblins hauled everything to a fresh swamp, complaining the whole way.</p><p class="gold-t"><b>+${fmt(n)} Golden Teeth!</b></p><p class="small">Spend teeth in the Tooth Shrine (More → Prestige).</p><div class="modal-actions"><button class="btn gold" data-act="close-modal">Let's go!</button></div>`);
-    });
-  },
   'reroll'() { if (this.G.rerollMerchant()) { sfx('coin'); this.rerender(); } else sfx('error'); },
   'buy-offer'(el) {
     const r = this.G.buyOffer(+el.dataset.i);
@@ -1426,6 +1404,10 @@ UI.prototype.acts = {
     const r = this.G.timeWarp(+el.dataset.h);
     if (r) { sfx('golden'); this.toast(`Time warp! +${fmt(r.gold)} gold`, 'good', 'hourglass'); this.flyCoins(innerWidth / 2, innerHeight / 2, 12); this.rerender(); } else sfx('error');
   },
+  'stake'(el) { this.stakeIdx = +el.dataset.i; this.rerender(); },
+  'gamble'(el) { this.gambleModal(el.dataset.g); },
+  'race-pick'(el) { this.racePick && this.racePick(+el.dataset.i); },
+  'flip-pick'(el) { this.flipPick && this.flipPick(el.dataset.s); },
   'exchange'(el) {
     const G = this.G, k = el.dataset.k, q = G.exchange(k);
     const pretty = (o) => Object.entries(o).map(([r, v]) => `${fmt(v)} ${r === 'mushrooms' ? 'mushrooms' : r}`).join(', ');

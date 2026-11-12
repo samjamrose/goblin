@@ -108,6 +108,7 @@ for (let sec = 0; sec < totalSec; sec++) {
       break;
     }
   }
+  if (sec % 60 === 0) for (const p of PERKS) G.buyPerk(p.id);
   // prestige when gain >= 50% of earned or big
   if (PRESTIGE && G.canPrestige() && G.teethGain() >= Math.max(30, s.teethEarned * 1.0)) {
     G.prestige();

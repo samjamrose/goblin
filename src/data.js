@@ -171,7 +171,7 @@ export const BIZ = BUILDINGS.filter(b => b.kind === 'biz');
 export const MILESTONES = [25, 50, 100, 200, 300, 400, 500, 600, 800, 1000];
 // tier visuals based on number of milestones reached (cap 4)
 
-export const DECOR_SIZE = { campfire: [2, 2], chiefhut: [3, 3], fountain: [3, 2], statue: [2, 2] };
+export const DECOR_SIZE = { campfire: [2, 2], chiefhut: [3, 3], fountain: [3, 2], statue: [2, 2], hoardmound: [5, 4] };
 export const HEAL_MS = 120000;
 export const RECOVER_MS = 90000; // time for a wounded goblin to go from 0 to full health in town
 export const MEDIC_NAMES = ['Nurse Bandagewart', 'Doc Scabbins', 'Sister Stitchgob', 'Medic Mossfoot', 'Dr. Pokewell', 'Nurse Plasterpants', 'Healer Hobnob', 'Doc Leechlove', 'Sawbones Snik', 'Nurse Gauzegrin'];
@@ -180,6 +180,7 @@ export const DECOR = [
   { type: 'chiefhut', tx: 31, ty: 24 },
   { type: 'fountain', tx: 49, ty: 25 },
   { type: 'statue', tx: 23, ty: 25 },
+  { type: 'hoardmound', tx: 6, ty: 3 },
 ];
 
 export const DISTRICTS = [
@@ -190,7 +191,7 @@ export const DISTRICTS = [
   { id: 'shady', name: 'Shady Alley', x: 0, y: 14, w: 18, h: 16, unlock: 11, cost: 4e7, ground: 'dark',
     desc: 'Nobody asks questions here. Nobody answers them either.' },
   { id: 'hoard', name: 'Hoard Hill', x: 0, y: 0, w: 18, h: 14, unlock: 17, cost: 1.5e10, ground: 'gold',
-    desc: 'The hill where gold goes to live.' },
+    desc: 'The hill where gold goes to live. Treasure dig sites pop up here, and the Great Hoard grows with your wealth.' },
   { id: 'dragon', name: 'Dragonview Heights', x: 18, y: 0, w: 38, h: 14, unlock: 25, cost: 8e12, ground: 'rock',
     desc: 'Great view of the dragons. Great view FOR the dragons.' },
 ];
@@ -307,7 +308,7 @@ export const NAMED = [
     ability: { type: 'bmult', target: 'hatchery', v: 4.0 }, bio: 'Dragons fear her. Mostly her singing.' },
   { id: 'ghostking', name: 'Ghost of Gobbo Past', rarity: 'mythical', job: 'merchant', trait: 'dramatic',
     look: { skin: '#cfe8ff', hat: 'crown', outfit: '#9ab0d0', tool: 'chain', extra: 'ghost' },
-    ability: { type: 'gold', v: 0.75 }, bio: 'Haunts the treasury. Counts the coins. Every night.', prestigeOnly: true },
+    ability: { type: 'gold', v: 0.75 }, bio: 'Haunts the treasury. Counts the coins. Every night.', minLevel: 30 },
 ];
 export const NAMED_BY_ID = Object.fromEntries(NAMED.map(n => [n.id, n]));
 
@@ -322,7 +323,7 @@ export const ABILITY_TEXT = {
   research: (a) => `-${Math.round(a.v * 100)}% research costs`,
   loot: (a) => `+${Math.round(a.v * 100)}% expedition loot`,
   offline: (a) => `+${Math.round(a.v * 100)}% offline earnings`,
-  teeth: (a) => `+${Math.round(a.v * 100)}% Golden Teeth from prestige`,
+  teeth: (a) => `+${Math.round(a.v * 100)}% more Golden Teeth earned`,
 };
 
 // ----------------------------------------------------------------- Regions
@@ -470,7 +471,7 @@ export const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
 
 // ----------------------------------------------------------------- Prestige perks (Golden Teeth)
 export const PERKS = [
-  { id: 'headstart', name: 'Head Start', desc: 'Start each run with gold: 1K / 1M / 1B / 1T', max: 4, cost: [5, 40, 300, 2500] },
+  { id: 'headstart', name: 'Bubble Bonus', desc: 'Coin bubbles are worth +50% more per level', max: 4, cost: [5, 40, 300, 2500] },
   { id: 'pockets', name: 'Bigger Pockets', desc: '+4h offline earnings cap per level', max: 3, cost: [8, 60, 400] },
   { id: 'luck', name: 'Lucky Tooth', desc: '+15% better recruit odds per level', max: 5, cost: [10, 50, 200, 800, 3000] },
   { id: 'golden', name: 'Shiny Magnet', desc: '+20% Golden Goblin frequency per level', max: 5, cost: [6, 30, 150, 600, 2500] },
@@ -483,7 +484,7 @@ export const PERKS = [
 ];
 export const PERK_BY_ID = Object.fromEntries(PERKS.map(p => [p.id, p]));
 export const PRESTIGE_MIN_GOLD = 1e9;
-// Total teeth ever claimable from all-time gold (across runs). Diminishing returns keep prestige from running away.
+// Golden Teeth earned automatically from all the gold you've ever made (diminishing returns).
 export function teethFor(totalGold) { return Math.floor(10 * Math.pow(Math.max(0, totalGold) / 1e9, 0.3)); }
 
 // ----------------------------------------------------------------- Items
@@ -570,6 +571,111 @@ export const FUNNY_EVENTS = [
       { t: 'Pet it', o: [[1, 'gems', 'The mimic purrs and spits out {gems} gems.']] } ] },
 ];
 
+
+// more incidents (added in an update so they repeat less often)
+FUNNY_EVENTS.push(
+  { id: 'goose', title: 'The Goose Has Arrived', text: 'A single goose has entered the capital. Nobody knows where it came from. {a} is terrified.',
+    choices: [
+      { t: 'Honk back', o: [[1, 'xp', 'The goose respects you now. +{xp} XP.'], [1, 'nothing', 'The goose honks louder. You lose. Everyone loses.']] },
+      { t: 'Offer it a job', o: [[1, 'buff_gold', 'The goose is a brilliant manager. Income ×2 for 60s!']] } ] },
+  { id: 'portrait', title: 'Royal Portrait', text: '{a} painted your portrait. Your nose is enormous. Your crown is a mushroom.',
+    choices: [
+      { t: 'Hang it in the square', o: [[1, 'gems', 'Tourists pay to laugh at it. +{gems} gems.']] },
+      { t: 'Demand a redo', o: [[1, 'xp', 'The redo is worse. Somehow. +{xp} XP for your patience.']] } ] },
+  { id: 'sock', title: 'The Sock Thief Strikes', text: 'Every left sock in the capital is missing. {a} has very warm feet.',
+    choices: [
+      { t: 'Search {a}’s hut', o: [[1, 'gold_s', 'Found 200 socks and a sack of coins. +{gold} gold.']] },
+      { t: 'Declare socks optional', o: [[1, 'buff_gold', 'Barefoot goblins work faster?! Income ×2 for 60s.']] } ] },
+  { id: 'slime', title: 'Mysterious Slime', text: 'Green slime is oozing out of the Gold Mine. {a} licked it. {a} is now glowing.',
+    choices: [
+      { t: 'Bottle it', o: [[1, 'ore', 'The slime hardens into ore. +{ore} ore.']] },
+      { t: 'Mine around it', o: [[1, 'buff_mine', 'The glowing slime lights the tunnels. Gold Mine ×3 for 2 minutes!']] } ] },
+  { id: 'debate', title: 'The Great Mushroom Debate', text: '{a} says mushrooms are vegetables. {b} says they are tiny trees. The whole town has picked sides.',
+    choices: [
+      { t: 'Side with {a}', o: [[1, 'mush', 'The vegetable team throws a feast. +{mush} mushrooms.']] },
+      { t: 'Side with {b}', o: [[1, 'xp', 'The tiny-tree team plants a forest. +{xp} XP.']] } ] },
+  { id: 'hiccups', title: 'Hiccup Epidemic', text: 'Half the town has the hiccups. Every hiccup is followed by a small explosion.',
+    choices: [
+      { t: 'Scare them all', o: [[1, 'gold_s', 'One giant BOO cures everyone. They tip you. +{gold} gold.']] },
+      { t: 'Hold a hiccup concert', o: [[1, 'gems', 'It’s a hit with the bards. +{gems} gems.']] } ] },
+  { id: 'map', title: 'Treasure Map!', text: '{a} found a treasure map. The X is drawn on {b}’s bed.',
+    choices: [
+      { t: 'Dig up the bed', o: [[2, 'gold_m', 'There WAS treasure under the bed! +{gold} gold.'], [1, 'nothing', 'Just {b}’s snack stash. {b} is furious.']] },
+      { t: 'Frame the map', o: [[1, 'xp', 'It’s art now. +{xp} XP.']] } ] },
+  { id: 'troll', title: 'A Troll Wants In', text: 'A polite troll knocks on the gate. He has a resume. He lists "smashing" as a skill.',
+    choices: [
+      { t: 'Hire him', o: [[1, 'ore', 'He smashes boulders into ore all day. +{ore} ore.']] },
+      { t: 'Send him to the Arena', o: [[1, 'gold_m', 'He’s a crowd favourite! +{gold} gold in tickets.']] } ] },
+  { id: 'rain', title: 'It’s Raining Frogs', text: 'It is raining frogs. Again. {a} is trying to catch them in a hat.',
+    choices: [
+      { t: 'Frog soup!', o: [[1, 'mush', 'Frog soup with mushrooms. Delicious. +{mush} mushrooms.']] },
+      { t: 'Release them to the swamp', o: [[1, 'gems', 'The Frog Prince sends thanks. +{gems} gems.']] } ] },
+  { id: 'smell', title: 'The Smell', text: 'There is a smell. Nobody admits to the smell. {a} is looking very innocent.',
+    choices: [
+      { t: 'Interrogate {a}', o: [[1, 'xp', '{a} confesses. It was the cheese. +{xp} XP.']] },
+      { t: 'Bottle the smell', o: [[1, 'gold_s', 'Sold to knights as a repellent. +{gold} gold.']] } ] },
+  { id: 'catapult', title: 'Homemade Catapult', text: '{a} built a catapult. {a} wants to launch {b}. {b} has not agreed.',
+    choices: [
+      { t: 'Launch a sack of junk', o: [[1, 'gold_s', 'It lands in a merchant cart. They pay to make it stop. +{gold} gold.']] },
+      { t: 'Turn it into a ride', o: [[1, 'buff_gold', 'Everyone wants a turn! Income ×2 for 60s.']] } ] },
+  { id: 'ghost', title: 'Haunted Outhouse', text: 'The outhouse is haunted. The ghost is very sorry and very loud.',
+    choices: [
+      { t: 'Hire an exorcist', o: [[1, 'gold_cost', 'The exorcist charged {gold} gold. The ghost moved into the tavern.']] },
+      { t: 'Charge ghost tours', o: [[1, 'gems', 'Spooky tourism booms. +{gems} gems.']] } ] },
+  { id: 'wedding', title: 'Goblin Wedding', text: '{a} and {b} are getting married. The cake is made of mud. The ring is a bottle cap.',
+    choices: [
+      { t: 'Throw a huge party', o: [[1, 'buff_tavern', 'The tavern is packed. Tavern ×3 for 2 minutes!']] },
+      { t: 'Give a gift', o: [[1, 'mush_cost', 'You gave {mush} mushrooms. They cried. Morale is up.']] } ] },
+  { id: 'meteor', title: 'Shooting Star', text: 'A tiny shooting star crashed right next to {a}. It’s still warm.',
+    choices: [
+      { t: 'Crack it open', o: [[1, 'gems', 'It’s full of gems! +{gems} gems.'], [1, 'ore', 'It’s full of space ore. +{ore} ore.']] },
+      { t: 'Make a wish', o: [[1, 'buff_gold', 'Wish granted: Income ×2 for 60s.']] } ] },
+  { id: 'chef', title: 'New Chef in Town', text: '{a} has declared themselves head chef. Their only recipe is "boiled rock".',
+    choices: [
+      { t: 'Try the boiled rock', o: [[1, 'xp', 'Crunchy. +{xp} XP for bravery.']] },
+      { t: 'Put them on mushroom duty', o: [[1, 'buff_shroom', 'They are a natural! Mushroom Patch ×5 for 2 minutes.']] } ] },
+  { id: 'knight', title: 'Lost Knight', text: 'A tiny knight on a tiny horse is lost in the capital. He demands we surrender. Nobody can see him.',
+    choices: [
+      { t: 'Surrender (as a joke)', o: [[1, 'gold_s', 'He gives YOU his gold, confused. +{gold} gold.']] },
+      { t: 'Give him directions home', o: [[1, 'xp', 'He promises never to invade. +{xp} XP.']] } ] },
+  { id: 'statue2', title: 'The Statue Moved', text: 'The golden statue in Muck Camp moved 3 feet in the night. {a} swears it winked.',
+    choices: [
+      { t: 'Polish it', o: [[1, 'gems', 'It drops a gem out of gratitude. +{gems} gems.']] },
+      { t: 'Ignore it', o: [[1, 'nothing', 'The statue looks offended.']] } ] },
+  { id: 'bees', title: 'Bee Problem', text: '{a} poked a beehive to see what would happen. Now we all know.',
+    choices: [
+      { t: 'Run!', o: [[1, 'nothing', 'Everyone ran. Nobody worked. The bees won.'], [1, 'mush', 'While running, {a} tripped into a mushroom field. +{mush} mushrooms.']] },
+      { t: 'Steal the honey', o: [[1, 'gold_s', 'Goblin honey sells well. +{gold} gold.']] } ] },
+  { id: 'contest2', title: 'Burping Contest', text: 'The annual burping contest is tonight. {a} has been drinking grog all day to prepare.',
+    choices: [
+      { t: 'Sponsor {a}', o: [[1, 'gems', '{a} wins with a burp heard in the next kingdom. +{gems} gems.']] },
+      { t: 'Sell tickets', o: [[1, 'buff_tavern', 'Packed house! Tavern ×3 for 2 minutes.']] } ] },
+  { id: 'tooth', title: 'Wobbly Tooth', text: '{a} lost a tooth and wants to sell it to the Tooth Shrine. It is not a gold tooth.',
+    choices: [
+      { t: 'Buy it anyway', o: [[1, 'gold_cost', 'You paid {gold} gold for a regular tooth. {a} is delighted.']] },
+      { t: 'Paint it gold', o: [[1, 'xp', 'Fooled nobody. Very funny though. +{xp} XP.']] } ] },
+  { id: 'cart', title: 'Runaway Mine Cart', text: 'A mine cart is rolling through town with nobody in it. It is picking up speed.',
+    choices: [
+      { t: 'Jump in!', o: [[1, 'gold_m', 'It crashes into the vault and spills gold everywhere. +{gold} gold.']] },
+      { t: 'Build a ramp', o: [[1, 'ore', 'It flies over the river and lands in an ore pile. +{ore} ore.']] } ] },
+  { id: 'twinsheep', title: 'Sheep in Disguise', text: '{a} is clearly a sheep wearing a goblin costume. It is a very good worker.',
+    choices: [
+      { t: 'Promote the sheep', o: [[1, 'buff_gold', 'Productivity is through the roof. Income ×2 for 60s.']] },
+      { t: 'Shear it', o: [[1, 'gold_s', 'Wool sells well. The sheep is mildly upset. +{gold} gold.']] } ] },
+  { id: 'echo', title: 'The Echo Cave', text: '{a} shouted into a cave and the echo shouted back insults.',
+    choices: [
+      { t: 'Insult it back', o: [[1, 'xp', 'An epic battle of words. You win. +{xp} XP.']] },
+      { t: 'Explore the cave', o: [[1, 'ore', 'The echo was hiding ore. +{ore} ore.']] } ] },
+  { id: 'kingvisit', title: 'Rival King’s Visit', text: 'Chief Snaggletooth is visiting to "admire" your capital. He keeps touching the gold.',
+    choices: [
+      { t: 'Show off everything', o: [[1, 'gems', 'He leaves jealous and drops a gem. +{gems} gems.']] },
+      { t: 'Hide the gold', o: [[1, 'xp', 'He thinks your capital is poor and stops worrying about you. +{xp} XP.']] } ] },
+  { id: 'nap2', title: 'Napping Contest', text: '{a} and {b} have been in a napping contest for three days.',
+    choices: [
+      { t: 'Wake them up', o: [[1, 'gold_s', 'They work extra hard out of guilt. +{gold} gold.']] },
+      { t: 'Let them sleep', o: [[1, 'nothing', 'Day four. Still sleeping. Truly champions.']] } ] },
+);
+
 export const AMBIENT_EVENTS = [
   '{a} tripped over a chicken.', '{a} and {b} are arguing about hats.', '{a} is napping on the job.',
   '{a} stole {b}\'s lunch.', '{a} challenged a rock to a duel. The rock won.', '{a} is singing badly.',
@@ -617,7 +723,7 @@ export const STORY = [
   { text: 'Upgrade any building to level 50', goal: { anyLvl: 50 }, reward: { gems: 25 } },
   { text: 'Earn 1 Billion gold this run', goal: { runGold: 1e9 }, reward: { gems: 30 } },
   { text: 'Unlock Shady Alley', goal: { district: 'shady' }, reward: { gems: 30 } },
-  { text: 'Pack Up the Capital (Prestige)', goal: { stat: ['prestiges', 1] }, reward: { gems: 100 }, hint: 'Open More → Prestige once you\'ve earned enough Golden Teeth.' },
+  { text: 'Earn 25 Golden Teeth', goal: { teeth: 25 }, reward: { gems: 100 }, hint: 'Golden Teeth come automatically as you earn gold. Spend them in More → Tooth Shrine.' },
   { text: 'Defeat Mother Gloop (Caves boss)', goal: { boss: 'caves' }, reward: { gems: 60 } },
   { text: 'Own a Legendary goblin', goal: { rarity: 3 }, reward: { gems: 50 } },
   { text: 'Unlock Hoard Hill', goal: { district: 'hoard' }, reward: { gems: 50 } },
@@ -671,8 +777,8 @@ export const ACHIEVEMENTS = [
   { id: 'def10', name: 'Fortress of Mud', desc: 'Repel 10 invasions', check: s => s.stats.invasionsWon >= 10, gems: 50 },
   { id: 'ev10', name: 'Drama Manager', desc: 'Handle 10 goblin incidents', check: s => s.stats.events >= 10, gems: 15 },
   { id: 'res10', name: 'Mad Scientist', desc: 'Complete 10 research projects', check: s => Object.keys(s.research).length >= 10, gems: 30 },
-  { id: 'pres1', name: 'Moving Day', desc: 'Prestige once', check: s => s.stats.prestiges >= 1, gems: 50 },
-  { id: 'pres5', name: 'Serial Mover', desc: 'Prestige 5 times', check: s => s.stats.prestiges >= 5, gems: 150 },
+  { id: 'pres1', name: 'Tooth Collector', desc: 'Earn 25 Golden Teeth', check: s => s.teethEarned >= 25, gems: 50 },
+  { id: 'pres5', name: 'Mouthful of Gold', desc: 'Earn 250 Golden Teeth', check: s => s.teethEarned >= 250, gems: 150 },
   { id: 'set1', name: 'Hoarder', desc: 'Complete a treasure set', check: (s, G) => G.completedSets() >= 1, gems: 30 },
   { id: 'trade10', name: 'Shady Dealings', desc: 'Make 10 trades with the merchant', check: s => s.stats.trades >= 10, gems: 20 },
   { id: 'streak7', name: 'Loyal Overlord', desc: 'Log in 7 days in a row', check: s => s.daily.streak >= 7, gems: 50 },
@@ -699,7 +805,7 @@ export const TRACK_UNLOCKS = [
   { id: 'minegroove', need: 'Reach Capital Level 15', check: (s) => s.level >= 15 },
   { id: 'frostfang', need: 'Defeat Yeti Grandma (Frostfang Mountains boss)', check: (s) => (s.regions.frostfang?.stage || 0) >= 10 },
   { id: 'dragonhoard', need: 'Defeat Vorgath the Hoarder, the final dragon', check: (s) => (s.regions.ember?.stage || 0) >= 10 },
-  { id: 'gobtopia', need: 'Reach Capital Level 50 after packing up the capital 3 times', check: (s) => s.level >= 50 && s.stats.prestiges >= 3 },
+  { id: 'gobtopia', need: 'Reach Capital Level 50 and defeat every region boss', check: (s) => s.level >= 50 && REGIONS.every(r => (s.regions[r.id]?.stage || 0) >= 10) },
 ];
 
 export const MERCHANT_NAMES = ['Gribble the Wandering Trader'];

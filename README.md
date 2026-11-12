@@ -34,7 +34,9 @@ Progress saves automatically to the browser (every 15 seconds and whenever you l
 | **Collections** | Goblin Codex, 28 treasures in 7 sets with set bonuses, and gear in weapon and trinket slots. |
 | **Trading** | Gribble the Wandering Trader (rotating stock), the Bazaar exchange, and gem time-warps. |
 | **Progression** | Capital levels and ranks, 33 story quests, 3 daily quests per day plus a bonus, a 7-day login streak, and 46 achievements (each one gives +1% income). |
-| **Prestige** | "Pack Up the Capital" for Golden Teeth (+2% income each, permanent). You keep your goblins, gear and conquests. The Tooth Shrine sells permanent perks. |
+| **Golden Teeth** | Earned automatically from all the gold you make, with no restarting. Each tooth gives +2% income forever, and the Tooth Shrine sells permanent perks. |
+| **Lucky Rat Casino** | Real gambling: slots, rat races, and coin flips with fair odds. |
+| **Hoard Hill** | The Great Hoard landmark grows with your wealth, and treasure dig sites pop up for you to dig. |
 | **Competition** | A weekly Tribal League against rival goblin chiefs with gem rewards, plus a shareable brag card image. |
 | **Feel** | Day/night cycle, particles, screen shake, a procedural chiptune soundtrack, haptics, offline earnings and a "welcome back" summary. |
 

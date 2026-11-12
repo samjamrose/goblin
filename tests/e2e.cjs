@@ -241,6 +241,43 @@ const SHOTS = process.env.SHOTS || null;
   await shot('bazaar');
   await ev(() => window.__game.ui.closeSheet());
 
+  // ---- casino gambling
+  await ev(() => { const G = window.__game.G; G.s.level = Math.max(G.s.level, 12); G.s.gold = 1e12; if (!G.isBuilt('casino')) { G.buy('casino'); G.s.buildings.casino.built = 0; } window.__game.ui.openTab('build'); window.__game.ui.show({ tab: 'building', param: 'casino' }, true); });
+  await wait(300);
+  const bets0 = await ev(() => window.__game.G.s.stats.bets || 0);
+  await p.click('.sheet-body [data-act=gamble][data-g=slots]');
+  await wait(2200);
+  check(await ev((b0) => (window.__game.G.s.stats.bets || 0) === b0 + 1 && /WIN|Lost|even/.test(document.querySelector('#modal-box').innerText), bets0), 'slots spin and pay out');
+  await shot('slots');
+  await closeModals();
+  await p.click('.sheet-body [data-act=gamble][data-g=race]');
+  await wait(200);
+  await p.click('#modal [data-act=race-pick][data-i="2"]');
+  await wait(3800);
+  check(await ev(() => /wins!/.test(document.querySelector('#modal-box').innerText)), 'rat race runs to a finish');
+  await shot('race');
+  await closeModals();
+  await p.click('.sheet-body [data-act=gamble][data-g=flip]');
+  await wait(200);
+  await p.click('#modal [data-act=flip-pick][data-s=heads]');
+  await wait(1700);
+  check(await ev(() => /landed on/.test(document.querySelector('#modal-box').innerText)), 'coin flip resolves');
+  await closeModals();
+  await ev(() => window.__game.ui.closeSheet());
+  // ---- hoard hill dig site
+  await ev(() => { const G = window.__game.G, w = window.__game.world; G.s.districts.hoard = true; w.terrainDirty = true; w.digT = 0; });
+  await wait(400);
+  const dig = await ev(() => { const w = window.__game.world; const d = (w.digs || [])[0]; if (!d) return null; w.focus(d.x, d.y, false); w.camTarget = null; w.cam.vx = w.cam.vy = 0; return w.toScreen(d.x, d.y - 3); });
+  check(!!dig, 'dig site appears on Hoard Hill');
+  if (dig) { for (let k = 0; k < 3; k++) { await p.mouse.click(dig[0], dig[1]); await wait(120); } check(await ev(() => (window.__game.G.s.stats.digs || 0) >= 1), 'digging up treasure works'); }
+  await ev(() => { const w = window.__game.world, m = { tx: 6, ty: 3 }; w.cam.zoom = 2.2; w.focus((m.tx + 2.5) * 16, (m.ty + 2) * 16, false); });
+  await wait(500);
+  await shot('hoard');
+  // map top can be dragged into view below the HUD
+  check(await ev(() => { const w = window.__game.world; w.cam.zoom = 2; w.cam.y = -9999; w.clampCam(); return w.toScreen(0, 0)[1] >= 150; }), 'top of map can come out from under the HUD');
+  // incidents don't repeat back to back
+  check(await ev(() => { const G = window.__game.G, seen = []; for (let k = 0; k < 15; k++) { G.spawnEvent(); seen.push(G.rt.event.def.id); G.rt.event = null; } return new Set(seen).size === 15; }), '15 incidents in a row are all different');
+
   // ---- injuries & infirmary
   await ev(() => window.__game.ui.closeSheet());
   const team = await ev(() => window.__game.G.battleTeam().map(g => g.uid));
@@ -380,30 +417,18 @@ const SHOTS = process.env.SHOTS || null;
   await p.click('.stab[data-sub=league]');
   await wait(150);
   check(await p.isVisible('.lb-row.me'), 'league shows player');
-  await p.click('.stab[data-sub=prestige]');
-  await wait(150);
-  await ev(() => { window.__game.G.s.runGold = 5e10; });
-  await wait(300);
-  const goblinsBefore = await ev(() => window.__game.G.s.goblins.length);
-  await p.click('[data-act=prestige]');
-  await wait(300);
-  check(await p.isVisible('#comic'), 'prestige comic shown');
-  await shot('comic1');
-  for (let k = 0; k < 4; k++) { await p.click('#cm-next'); await wait(250); }
-  await shot('comic5');
-  await p.click('#cm-go');
-  await wait(600);
-  check(await ev(() => { const w = window.__game.world, G = window.__game.G; return [...w.agents.values()].every(a => { const g = G.gob(a.uid); return !(g && g.assign && g.assign.t === 'b' && !G.isBuilt(g.assign.id)); }); }), 'no goblin left working at a removed building');
-  check(await ev(() => [...window.__game.world.agents.values()].every(a => a.state !== 'work' || !!window.__game.world.workSpot(a, window.__game.G.gob(a.uid)))), 'no goblin stuck at an old work spot');
-  check(await ev(() => window.__game.G.s.teethEarned) > 0, 'prestige gave teeth');
-  check(await ev(() => window.__game.G.s.goblins.length) === goblinsBefore, 'goblins kept after prestige');
-  check(await ev(() => window.__game.G.s.buildings.mine.lvl) === 0, 'buildings reset after prestige');
-  await closeModals();
-  await tab('more');
-  await p.click('.stab[data-sub=prestige]');
-  await wait(150);
+  // ---- no more restarting: teeth arrive automatically, buildings stay
+  const mineBefore = await ev(() => window.__game.G.s.buildings.mine.lvl);
+  await ev(() => { const G = window.__game.G; G.s.lifetimeGold = Math.max(G.s.lifetimeGold, 5e10); });
+  await wait(1300);
+  check(await ev(() => window.__game.G.s.teethEarned) > 0, 'golden teeth earned automatically');
+  check(await ev(() => window.__game.G.s.buildings.mine.lvl) === mineBefore, 'nothing resets when teeth are earned');
+  await p.click('.stab[data-sub=shrine]');
+  await wait(200);
+  check(!(await p.isVisible('[data-act=prestige]')), 'no pack-up button anymore');
   await p.click('[data-act=perk][data-id=headstart]');
   check(await ev(() => window.__game.G.s.perks.headstart) === 1, 'perk bought');
+  await shot('shrine');
   await p.click('.stab[data-sub=settings]');
   await wait(150);
   await p.click('[data-act=toggle][data-k=music]');
@@ -439,7 +464,7 @@ const SHOTS = process.env.SHOTS || null;
   await p.click('.stab[data-sub=shop]');
   await p.click('[data-act=share]');
   await wait(500);
-  check(await p.isVisible('#modal.open img'), 'share card rendered');
+  check(await p.isVisible('#modal.open img'), 'share card rendered: ' + await ev(() => (document.querySelector('#modal.open') ? document.querySelector('#modal-box').innerText.slice(0, 60) : 'no modal')));
   await shot('share');
   await closeModals();
 

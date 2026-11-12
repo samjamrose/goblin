@@ -288,6 +288,13 @@ p { margin: 6px 0; line-height: 1.35; }
 .skb .sk-t { position: absolute; top: 18px; left: 0; right: 0; text-align: center; font-size: 14px; z-index: 1; text-shadow: 0 1px 0 #000; }
 .skb:active { transform: translateY(2px); }
 @keyframes skReady { to { box-shadow: 0 0 0 2px var(--ink), inset 0 2px 0 rgba(255,255,255,.3), 0 0 10px #c8a0ff; } }
+.reels { display: flex; gap: 8px; justify-content: center; margin: 10px 0; }
+.reel { width: 64px; height: 64px; border-radius: 10px; background: #fffaf0; display: grid; place-items: center; box-shadow: inset 0 0 0 3px #1c1424, 0 3px 0 rgba(0,0,0,.4); }
+.reel img { width: 40px; height: 40px; }
+.reel.stop { animation: bump .25s; }
+.flipcoin { margin: 12px auto; width: 80px; height: 80px; animation: flipc .25s linear 5; }
+.flipcoin img { width: 80px; height: 80px; }
+@keyframes flipc { 50% { transform: scaleX(0.05); } }
 .btn.bomb { flex: 1; position: relative; overflow: hidden; background: #4a3a3a; font-size: 17px; padding: 12px; }
 .btn.bomb::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--charge, 0%); background: linear-gradient(#ff9a3a, #c04a1a); transition: width .1s; }
 .btn.bomb span { position: relative; }

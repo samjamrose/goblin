@@ -458,7 +458,7 @@ export const G = {
     const r = RARITIES[rIdx];
     if (rIdx >= 2 && !opts.job) {
       // named goblin
-      const pool = NAMED.filter(n => this.rarityIdx(n.rarity) === rIdx && (!n.prestigeOnly || s.stats.prestiges > 0));
+      const pool = NAMED.filter(n => this.rarityIdx(n.rarity) === rIdx && (!n.minLevel || s.level >= n.minLevel));
       const n = opts.named ? NAMED_BY_ID[opts.named] : pick(pool);
       return {
         uid: s.nextUid++, named: n.id, name: n.name, rarity: n.rarity, job: n.job, trait: n.trait,
@@ -1010,7 +1010,14 @@ export const G = {
     const total = Math.floor(teethFor(this.s.pastRunGold + this.s.runGold) * (1 + this.abilitySum('teeth')));
     return Math.max(0, total - this.s.teethEarned);
   },
-  canPrestige() { return this.s.runGold >= PRESTIGE_MIN_GOLD && this.teethGain() >= 1; },
+  // packing up (restarting) was removed: Golden Teeth are now earned automatically, see checkTeeth()
+  canPrestige() { return false; },
+  checkTeeth() {
+    const s = this.s;
+    const total = Math.floor(teethFor(s.lifetimeGold) * (1 + this.abilitySum('teeth')));
+    const diff = total - s.teethEarned;
+    if (diff > 0) { s.teeth += diff; s.teethEarned += diff; this.emit('teethEarned', diff); }
+  },
   prestige() {
     if (!this.canPrestige()) return false;
     const s = this.s;
@@ -1059,7 +1066,7 @@ export const G = {
     if (!built.length || this.rt.bubbles.length >= 3) return;
     const b = pick(built);
     if (this.rt.bubbles.find(x => x.bid === b.id)) return;
-    const value = Math.max(2, this.buildingIncome(b.id, false) * 20);
+    const value = Math.max(2, this.buildingIncome(b.id, false) * 20) * (1 + 0.5 * this.perk('headstart'));
     const bub = { id: Math.random(), bid: b.id, value, born: this.now() };
     this.rt.bubbles.push(bub);
     this.emit('bubble', bub);
@@ -1110,7 +1117,11 @@ export const G = {
   },
   fill(text, vars) { return text.replace(/\{(\w+)\}/g, (m, k) => vars[k] !== undefined ? vars[k] : m); },
   spawnEvent() {
-    const ev = pick(FUNNY_EVENTS);
+    // avoid repeats: skip the last ~15 incidents you saw
+    const recent = this.s.recentEvents = this.s.recentEvents || [];
+    const pool = FUNNY_EVENTS.filter(e => !recent.includes(e.id));
+    const ev = pick(pool.length ? pool : FUNNY_EVENTS);
+    recent.push(ev.id); if (recent.length > Math.min(15, FUNNY_EVENTS.length - 3)) recent.shift();
     const [a, b] = this.pickNames(2);
     this.rt.event = { def: ev, a, b, until: this.now() + 120000 };
     this.emit('eventSpawn', this.rt.event);
@@ -1134,6 +1145,7 @@ export const G = {
       case 'buff_gold': this.buff('gold', 2, 60); break;
       case 'buff_tavern': this.buff('b:tavern', 3, 120); break;
       case 'buff_shroom': this.buff('b:shroom', 5, 120); break;
+      case 'buff_mine': this.buff('b:mine', 3, 120); break;
     }
     this.s.stats.events++;
     this.addXp(this.xpFrac(0.02));
@@ -1158,6 +1170,61 @@ export const G = {
     this.emit('log', text);
   },
 
+  // ---- Lucky Rat Casino gambling. Winnings don't count as "earned" gold (no free teeth).
+  stakes() {
+    const inc = Math.max(5, this.incomePerSec(false));
+    return [{ label: 'Small', v: Math.max(100, inc * 60) }, { label: 'Medium', v: Math.max(1000, inc * 600) }, { label: 'Big', v: Math.max(10000, inc * 3600) }];
+  },
+  SLOT_SYMBOLS: [['coin', 30], ['shroom', 28], ['rat', 20], ['gem', 10], ['crown', 5], ['skull', 8]],
+  SLOT_PAY: { coin: 5, shroom: 5, rat: 8, gem: 20, crown: 60 },
+  placeBet(stake) {
+    if (!this.isBuilt('casino') || this.isConstructing('casino')) return false;
+    if (!(stake > 0) || !this.spend('gold', stake)) return false;
+    const st = this.s.stats; st.bets = (st.bets || 0) + 1;
+    return true;
+  },
+  payBet(stake, mult) {
+    const win = stake * mult, st = this.s.stats;
+    if (win > 0) { this.addGold(win, false); }
+    if (mult > 1) { st.betWins = (st.betWins || 0) + 1; st.bestWin = Math.max(st.bestWin || 0, win - stake); }
+    return win;
+  },
+  playSlots(stake) {
+    if (!this.placeBet(stake)) return null;
+    const reels = [0, 1, 2].map(() => weighted(this.SLOT_SYMBOLS));
+    let mult = 0;
+    if (!reels.includes('skull')) {
+      if (reels[0] === reels[1] && reels[1] === reels[2]) mult = this.SLOT_PAY[reels[0]];
+      else if (reels[0] === reels[1] || reels[1] === reels[2] || reels[0] === reels[2]) mult = 1.4;
+    }
+    return { reels, mult, win: this.payBet(stake, mult), stake };
+  },
+  playRace(stake, pickIdx) {
+    if (!this.placeBet(stake)) return null;
+    const winner = Math.floor(Math.random() * 4), mult = winner === pickIdx ? 3.7 : 0;
+    return { winner, pick: pickIdx, mult, win: this.payBet(stake, mult), stake };
+  },
+  playFlip(stake, side) {
+    if (!this.placeBet(stake)) return null;
+    const result = Math.random() < 0.5 ? 'heads' : 'tails', mult = result === side ? 1.9 : 0;
+    return { result, side, mult, win: this.payBet(stake, mult), stake };
+  },
+
+  // Hoard Hill: dig up a buried treasure
+  digHoard() {
+    const s = this.s, inc = Math.max(5, this.incomePerSec(false));
+    s.stats.digs = (s.stats.digs || 0) + 1;
+    const got = this.grant({ gold: Math.max(200, inc * 240), ore: Math.floor(20 + s.level * 6), mushrooms: Math.floor(30 + s.level * 10) });
+    let text = 'Dug up treasure!';
+    if (Math.random() < 0.2) { const g = 5 + Math.floor(Math.random() * 11); s.gems += g; got.push(g + ' gems'); text = `Gem stash! +${g} gems`; }
+    if (Math.random() < 0.05) {
+      const missing = Object.keys(TREASURES).filter(k => !s.treasures[k]);
+      if (missing.length) { const k = pick(missing); s.treasures[k] = 1; got.push(TREASURES[k].name); text = 'RARE: ' + TREASURES[k].name + '!'; this.emit('treasure', k); }
+    }
+    this.addXp(this.xpFrac(0.03));
+    this.emit('dug', got);
+    return { got, text };
+  },
   // Disasters
   spawnFire() {
     const built = BIZ.filter(b => this.isBuilt(b.id) && !this.s.damaged[b.id] && !this.rt.fires.find(f => f.bid === b.id));
@@ -1210,7 +1277,7 @@ export const G = {
     offers.push({ id: 'gems', name: 'Shiny Gems', desc: 'Trade ore for gems.', cost: { ore: Math.floor(150 + s.level * 25) }, give: { gems: 25 } });
     const r = weighted([[2, 60], [3, 32], [4, 8]]);
     offers.push({ id: 'item', name: 'Fancy Gear', desc: RARITIES[r].name + ' equipment piece', cost: { gems: [0, 0, 60, 150, 400][r] }, give: { item: r } });
-    const missing = NAMED.filter(n => !s.codex[n.id] && !n.prestigeOnly && n.rarity !== 'mythical');
+    const missing = NAMED.filter(n => !s.codex[n.id] && !n.minLevel && n.rarity !== 'mythical');
     if (missing.length) {
       const n = pick(missing);
       offers.push({ id: 'wanted', name: 'Wanted Poster: ' + n.name, desc: 'Hire this ' + RARITIES[this.rarityIdx(n.rarity)].name + ' goblin directly!', cost: { gems: n.rarity === 'epic' ? 350 : 900 }, give: { named: n.id } });
@@ -1370,6 +1437,7 @@ export const G = {
     if (g.runGold) return Math.min(1, s.runGold / g.runGold);
     if (g.rarity) return this.bestRarity() >= g.rarity ? 1 : 0;
     if (g.sets) return Math.min(1, this.completedSets() / g.sets);
+    if (g.teeth) return Math.min(1, s.teethEarned / g.teeth);
     return 0;
   },
   claimStory() {
@@ -1539,6 +1607,12 @@ export const G = {
   },
   // the DJ stand is new in an update: if a player's own building sits on its spot, find it another
   fixDjSpot() {
+    // buildings a player placed where a landmark now stands get moved to free land
+    for (const b of this.posAll()) {
+      if (!b.placed || this.s.buildings[b.id].lvl <= 0) continue;
+      const hit = DECOR.some(dc => { const [w, h] = DECOR_SIZE[dc.type]; return b.tx < dc.tx + w && b.tx + b.w > dc.tx && b.ty < dc.ty + h && b.ty + b.h > dc.ty; });
+      if (hit) { const sp = this.findSpot(b.id, b.tx, b.ty + 6); if (sp) this.setPlace(b.id, sp.tx, sp.ty); }
+    }
     const p = this.pos('dj');
     for (const b of this.posAll()) {
       if (b.id === 'dj' || this.s.buildings[b.id].lvl <= 0) continue;
@@ -1549,6 +1623,7 @@ export const G = {
     }
   },
   slowTick() {
+    this.checkTeeth();
     this.checkTracks();
     this.checkAchievements();
     this.checkDaily();

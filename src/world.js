@@ -331,14 +331,18 @@ export class World {
     this.cv.width = Math.round(r.width * this.dpr);
     this.cv.height = Math.round(r.height * this.dpr);
     if (!this.zoomSet) { this.cam.zoom = clamp(this.sw / (15 * TILE), 1.7, 3.4); this.zoomSet = true; }
-    this.minZoom = Math.max(1.1, Math.max(this.sw / WW, this.sh / WH) * 1.02);
+    this.minZoom = Math.max(1.0, this.sw / WW * 1.02);
     this.clampCam();
   }
   clampCam() {
     const z = this.cam.zoom = clamp(this.cam.zoom, this.minZoom || 1.2, 5);
     const hw = this.sw / z / 2, hh = this.sh / z / 2;
     this.cam.x = clamp(this.cam.x, hw - 8, WW - hw + 8);
-    this.cam.y = clamp(this.cam.y, hh - 8, WH - hh + 8);
+    // let the map's top edge come down below the HUD and its bottom edge rise above the nav bar,
+    // so every part of the map can be seen by dragging (no zooming needed)
+    const topPad = 185 / z, botPad = 110 / z;
+    const lo = hh - topPad, hi = WH - hh + botPad;
+    this.cam.y = lo <= hi ? clamp(this.cam.y, lo, hi) : WH / 2;
   }
   toScreen(wx, wy) { return [(wx - this.cam.x) * this.cam.zoom + this.sw / 2, (wy - this.cam.y) * this.cam.zoom + this.sh / 2]; }
   toWorld(sx, sy) { return [(sx - this.sw / 2) / this.cam.zoom + this.cam.x, (sy - this.sh / 2) / this.cam.zoom + this.cam.y]; }
@@ -449,6 +453,22 @@ export class World {
         this.coinBurst(bx, by, 8, v);
         this.hooks.sfx('pop');
         this.hooks.haptic && this.hooks.haptic(8);
+        return;
+      }
+    }
+    // hoard dig sites
+    for (const dg of this.digs || []) {
+      if (Math.hypot(wx - dg.x, wy - (dg.y - 3)) < hitR + 6) {
+        dg.hp--;
+        this.puff(dg.x, dg.y, '#a07040', 6);
+        this.hooks.sfx('hit');
+        if (dg.hp <= 0) {
+          this.digs = this.digs.filter(x => x !== dg);
+          const res = G.digHoard();
+          this.coinBurst(dg.x, dg.y - 4, 12);
+          this.addFloat(dg.x, dg.y - 18, res.text, '#ffe060', 2.2, 1.1);
+          this.hooks.sfx('golden');
+        }
         return;
       }
     }
@@ -677,6 +697,7 @@ export class World {
       this.clampCam();
     }
     this.applyPlacements();
+    this.updateDigs(dt);
     this.syncAgents();
     this.updateAgents(dt);
     for (const k in this.bounce) { this.bounce[k] -= dt; if (this.bounce[k] <= 0) delete this.bounce[k]; }
@@ -793,13 +814,14 @@ export class World {
       const [w, h] = DECOR_SIZE[d.type];
       const dd = this.districtAt(d.tx, d.ty);
       if (dd && !G.districtOpen(dd.id)) continue;
-      items.push({ y: (d.ty + h) * TILE, draw: () => { ctx.drawImage(buildingSprite(d.type, w, h, 0, true), d.tx * TILE, (d.ty + h) * TILE - h * TILE - B_EXTRA); if (d.type === 'campfire') this.drawFire((d.tx + 1) * TILE, (d.ty + h) * TILE - 9, 1); } });
+      items.push({ y: (d.ty + h) * TILE, draw: () => { ctx.drawImage(buildingSprite(d.type, w, h, d.type === 'hoardmound' ? this.hoardTier() : 0, true), d.tx * TILE, (d.ty + h) * TILE - h * TILE - B_EXTRA); if (d.type === 'campfire') this.drawFire((d.tx + 1) * TILE, (d.ty + h) * TILE - 9, 1); } });
     }
     for (const a of this.agents.values()) {
       if (a.x < v.x0 - 20 || a.x > v.x1 + 20 || a.y < v.y0 - 10 || a.y > v.y1 + 30) continue;
       items.push({ y: a.y, draw: () => this.drawAgent(a) });
     }
     for (const [, r] of this.ratsVis) items.push({ y: r.y, draw: () => this.drawRat(r) });
+    for (const dg of this.digs || []) items.push({ y: dg.y, draw: () => this.drawDig(dg) });
     for (const u of this.invaders) items.push({ y: u.y, draw: () => { const sp = enemySprite(u.kind); ctx.drawImage(sp, Math.round(u.x - 12), Math.round(u.y - 22 + Math.abs(Math.sin(this.time * 6 + u.x)) * -2), 24, 24); } });
     if (this.golden) items.push({ y: this.golden.y, draw: () => this.drawGolden() });
     items.sort((a, b) => a.y - b.y);
@@ -1149,6 +1171,40 @@ export class World {
     const cols = ['#ff5aa0', '#5ac0ff', '#ffe060', '#7aff6a'];
     if (playing) for (let i = 0; i < 4; i++) if ((Math.floor(beat) + i) % 2) { ctx.globalAlpha = 0.25; ctx.fillStyle = cols[i]; ctx.beginPath(); ctx.moveTo(x + 5 + i * 7, yb - 31); ctx.lineTo(x + i * 7, yb - 9); ctx.lineTo(x + 10 + i * 7, yb - 9); ctx.fill(); ctx.globalAlpha = 1; }
     if (playing && Math.random() < 0.03) this.particles.push({ type: 'note', x: x + W / 2 + (Math.random() - 0.5) * 16, y: yb - 38, vx: (Math.random() - 0.5) * 8, vy: -10, t: 0, life: 2.2, color: cols[Math.floor(Math.random() * 4)] });
+  }
+  hoardTier() { const g = this.G.s.lifetimeGold || 0; return g >= 1e18 ? 4 : g >= 1e15 ? 3 : g >= 1e12 ? 2 : g >= 1e9 ? 1 : 0; }
+  // ---- Hoard Hill dig sites: tap three times to dig up treasure
+  updateDigs(dt) {
+    const G = this.G;
+    this.digs = this.digs || [];
+    if (!G.districtOpen('hoard')) { this.digs = []; return; }
+    this.digT = (this.digT ?? 20) - dt;
+    if (this.digT <= 0) {
+      this.digT = 80 + Math.random() * 70;
+      if (this.digs.length < 2) {
+        const d = DISTRICTS.find(x => x.id === 'hoard');
+        for (let k = 0; k < 40; k++) {
+          const tx = d.x + 1 + Math.floor(Math.random() * (d.w - 2)), ty = d.y + 3 + Math.floor(Math.random() * (d.h - 4));
+          const c = this.grid[ty]?.[tx];
+          if (!c || c.solid || c.road || c.t !== 'grass') continue;
+          this.digs.push({ id: Math.random(), x: tx * TILE + 8, y: ty * TILE + 10, hp: 3, born: this.time });
+          G.emit('digSpawn');
+          break;
+        }
+      }
+    }
+    // the great hoard sparkles
+    const m = DECOR.find(x => x.type === 'hoardmound');
+    if (m && Math.random() < dt * (1 + this.hoardTier())) this.particles.push({ type: 'spark', x: (m.tx + 1 + Math.random() * 3) * TILE, y: (m.ty + 1.5 + Math.random() * 2) * TILE, vx: 0, vy: -6, t: 0, life: 0.8, color: '#fff8c0' });
+  }
+  drawDig(dg) {
+    const ctx = this.ctx, x = Math.round(dg.x), y = Math.round(dg.y), pulse = Math.sin(this.time * 5) * 0.5 + 0.5;
+    ctx.fillStyle = 'rgba(120,80,40,0.8)'; ctx.beginPath(); ctx.ellipse(x, y, 7 + (3 - dg.hp) * 2, 3 + (3 - dg.hp), 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = `rgba(255,${200 + pulse * 55},60,1)`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x - 4, y - 7); ctx.lineTo(x + 4, y + 1); ctx.moveTo(x + 4, y - 7); ctx.lineTo(x - 4, y + 1); ctx.stroke();
+    ctx.globalAlpha = 0.3 + pulse * 0.4; ctx.fillStyle = '#ffe060'; ctx.beginPath(); ctx.ellipse(x, y - 3, 10, 7, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    // a little shovel
+    ctx.fillStyle = '#8a5a30'; ctx.fillRect(x + 6, y - 12, 1, 8); ctx.fillStyle = '#c8ccd8'; ctx.fillRect(x + 5, y - 5, 3, 3);
   }
   drawRat(r) {
     const ctx = this.ctx;
