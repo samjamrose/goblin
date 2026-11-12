@@ -88,6 +88,11 @@ async function boot() {
   G.on('item', () => { });
   G.on('repaired', (id) => { });
   G.on('medic', (g, src) => { sfx('achieve'); ui.toast(src === 'infirmary' ? `🩺 ${g.name} reports for duty at the Infirmary!` : `🩺 New medic earned: ${g.name}!`, 'good', 'heart'); });
+  // after packing up, every goblin starts fresh at the new camp (nobody stays at old building spots)
+  G.on('prestige', () => {
+    world.agents.clear(); world.bubbleTalk = []; world.placing = null;
+    world.buildGrid(); world.terrainDirty = true;
+  });
   G.on('trackUnlocked', (id) => { sfx('achieve'); ui.toast(`🎵 New track at the DJ Stand: ${TRACKS[id].name}!`, 'ach', 'music'); });
   G.on('medicGems', (n) => ui.toast(`Your infirmary is fully staffed: a medic reward became ${n} gems!`, 'good', 'gem'));
   G.on('healed', (g) => { if (!battle.active) ui.toast(`${g.name} is healed and back to work!`, 'good', 'heart'); });

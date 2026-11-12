@@ -577,7 +577,7 @@ export const G = {
       const dm = this.defenseMult();
       hp *= dm.hp; atk *= dm.atk;
     }
-    return { name: g.name, kind: 'goblin', look: g.look, gob: g.uid, rarity: g.rarity, hp, hpNow: hp * this.hpFrac(g), atk, spd: jc.spd, crit: jc.crit || 0.08, splash: jc.splash || 0 };
+    return { name: g.name, kind: 'goblin', look: g.look, gob: g.uid, job: g.job, rarity: g.rarity, hp, hpNow: hp * this.hpFrac(g), atk, spd: jc.spd, crit: jc.crit || 0.08, splash: jc.splash || 0 };
   },
   trainCost(g) {
     const ri = this.rarityIdx(g.rarity);
@@ -1268,18 +1268,42 @@ export const G = {
     this.s.stats.trades++;
     return true;
   },
-  exchange(kind) {
-    // simple resource exchange at the market
-    const s = this.s;
-    const inc = Math.max(5, this.incomePerSec(false));
-    // buy price = 2.5x the sell price, so round trips always lose gold
+  // ---- Bazaar trades. Buying costs 2.5x the selling price, so trading back and forth always loses.
+  bazaarRate() { return 1 + Math.min(1, (this.s.buildings.market.lvl || 0) / 150); },
+  TRADES: ['ore2gold', 'mush2gold', 'gold2ore', 'gold2mush', 'mush2ore', 'ore2gems'],
+  tradeQuote(kind) {
+    const s = this.s, inc = Math.max(5, this.incomePerSec(false)), r = this.bazaarRate();
     const oreN = Math.floor(20 + s.level * 3), mushN = Math.floor(40 + s.level * 8);
-    if (kind === 'ore2gold') { const n = Math.min(s.ore, 50); if (n < 1) return false; s.ore -= n; this.addGold(n * inc * 1.5, false); }
-    else if (kind === 'mush2gold') { const n = Math.min(s.mushrooms, 100); if (n < 1) return false; s.mushrooms -= n; this.addGold(n * inc * 0.5, false); }
-    else if (kind === 'gold2ore') { const c = oreN * inc * 1.5 * 2.5; if (!this.spend('gold', c)) return false; s.ore += oreN; }
-    else if (kind === 'gold2mush') { const c = mushN * inc * 0.5 * 2.5; if (!this.spend('gold', c)) return false; s.mushrooms += mushN; }
+    switch (kind) {
+      case 'ore2gold': return { name: 'Sell ore', give: { ore: 50 }, get: { gold: 50 * inc * 1.5 * r } };
+      case 'mush2gold': return { name: 'Sell mushrooms', give: { mushrooms: 100 }, get: { gold: 100 * inc * 0.5 * r } };
+      case 'gold2ore': return { name: 'Buy ore', give: { gold: oreN * inc * 3.75 / r }, get: { ore: oreN } };
+      case 'gold2mush': return { name: 'Buy mushrooms', give: { gold: mushN * inc * 1.25 / r }, get: { mushrooms: mushN } };
+      case 'mush2ore': return { name: 'Swap mushrooms for ore', give: { mushrooms: Math.ceil(oreN * 7 / r) }, get: { ore: oreN } };
+      case 'ore2gems': return { name: 'Trade ore for gems', give: { ore: 300 + s.level * 30 }, get: { gems: 10 }, daily: 3 };
+    }
+    return null;
+  },
+  tradesLeft(kind) {
+    const q = this.tradeQuote(kind); if (!q || !q.daily) return Infinity;
+    const d = this.s.daily; d.gemTrades = d.gemTradesDay === d.day ? (d.gemTrades || 0) : 0;
+    return q.daily - d.gemTrades;
+  },
+  canTrade(kind) {
+    const q = this.tradeQuote(kind); if (!q || !this.isBuilt('market')) return false;
+    if (this.tradesLeft(kind) <= 0) return false;
+    return Object.entries(q.give).every(([k, v]) => this.s[k] >= v);
+  },
+  exchange(kind) {
+    const q = this.tradeQuote(kind);
+    if (!q || !this.canTrade(kind)) return null;
+    const s = this.s;
+    for (const [k, v] of Object.entries(q.give)) s[k] -= v;
+    for (const [k, v] of Object.entries(q.get)) { if (k === 'gold') this.addGold(v, false); else s[k] += v; }
+    if (q.daily) { const d = s.daily; d.gemTradesDay = d.day; d.gemTrades = (d.gemTrades || 0) + 1; }
     s.stats.trades++;
-    return true;
+    this.emit('trade', q);
+    return q;
   },
 
   // ------------------------------------------------------------- Daily, story, achievements, league

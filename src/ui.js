@@ -5,7 +5,8 @@ import {
   LOGIN_REWARDS, PRESTIGE_MIN_GOLD, xpForLevel, ENEMIES, MILESTONES, RANKS, TILE, TRACK_UNLOCKS,
 } from './data.js';
 import { fmt, fmtTime, clamp, pct } from './util.js';
-import { icon, iconImg, goblinPortrait, buildingSprite, enemySprite, makeCanvas, GOB_W, GOB_H, goblinSheet } from './sprites.js';
+import { winChance } from './battlesim.js';
+import { icon, iconImg, goblinPortrait, buildingSprite, enemySprite, makeCanvas, GOB_W, GOB_H, goblinSheet, iconCanvas } from './sprites.js';
 import { sfx, setSfx, setMusic, unlockAudio, TRACKS, setTownTrack } from './audio.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -275,6 +276,7 @@ export class UI {
           el.innerHTML = `${n === 'max' ? 'MAX ×' + k : '×' + n}<small>${iconImg('coin')}${fmt(c)}</small>`;
         })}></button>`).join('')}</div>`;
         h += this.workerSlotsHtml(id);
+        if (id === 'market') h += this.bazaarHtml();
         h += this.moveBtn(id);
       }
     } else {
@@ -357,6 +359,98 @@ export class UI {
         ${has ? (on ? '<span class="tag green-t">♪ PLAYING</span>' : `<button class="btn tiny" data-act="play-track" data-id="${u.id}">Play</button>`) : ''}</div>`;
     });
     h += `<p class="small muted">Battles have their own music, and bosses get something even louder.</p>`;
+    return h;
+  }
+  // ---- "Pack Up the Capital" explained as a little animated comic before confirming
+  prestigeComic(onConfirm) {
+    const G = this.G, s = G.s, gain = G.teethGain();
+    const look = (i) => { const g = s.goblins[i % Math.max(1, s.goblins.length)]; return g ? g.look : { skin: '#6cbf45', hat: 'none', outfit: '#8a5a32', tool: 'sack' }; };
+    const slides = [
+      { title: 'Your capital is bursting!', text: `${esc(s.name)} earned <b class="gold-t">${fmt(s.runGold)} gold</b> this run. The swamp is FULL. There's no room left for more!`, scene: 'city' },
+      { title: 'Pack EVERYTHING!', text: 'Your goblins grab everything that isn’t nailed down. Then they grab the nails too.', scene: 'pack' },
+      { title: 'The Great Goblin March', text: 'They march off to a fresh, even muddier swamp. Buildings, gold, districts and research stay behind.', scene: 'march' },
+      { title: 'Golden Teeth!', text: `All that work turns into <b class="gold-t">+${fmt(gain)} Golden Teeth</b>. Each tooth gives <b>+2% to ALL income, forever</b>, and you can spend them on perks in the Tooth Shrine.`, scene: 'teeth' },
+      { title: 'Day 1 of a new capital', text: '', scene: 'camp', last: true },
+    ];
+    let i = 0, raf = 0, t0 = performance.now();
+    const W = 240, H = 135;
+    const draw = (ctx, scene, t) => {
+      ctx.imageSmoothingEnabled = false;
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, scene === 'teeth' ? '#3a2a10' : scene === 'march' ? '#ffb070' : '#8fd3ff'); sky.addColorStop(1, scene === 'teeth' ? '#1c1424' : '#e8f4d0');
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+      const ground = (y, c) => { ctx.fillStyle = c; ctx.fillRect(0, y, W, H - y); };
+      const gob = (lk, x, y, f, flip, sc = 1) => { const sh = goblinSheet(lk); ctx.drawImage(flip ? sh.flip : sh.sheet, f * GOB_W, 0, GOB_W, GOB_H, Math.round(x), Math.round(y), GOB_W * sc, GOB_H * sc); };
+      if (scene === 'city') {
+        ground(100, '#5fa83e');
+        const ids = ['palace', 'bank', 'casino', 'market', 'tavern', 'mine', 'shroom'].filter(id => G.isBuilt(id)).slice(0, 3);
+        (ids.length ? ids : ['tavern', 'mine']).forEach((id, k) => { const b = BUILDING_BY_ID[id]; const spr = buildingSprite(id, b.w, b.h, G.tier(id)); const sc = Math.min(1, 60 / spr.height); ctx.drawImage(spr, 12 + k * 78, 100 - spr.height * sc, spr.width * sc, spr.height * sc); });
+        for (let k = 0; k < 14; k++) { const x = 10 + ((k * 37) % 220), y = 102 + ((k * 13) % 26); ctx.drawImage(iconCanvas('coin'), x, y - Math.abs(Math.sin(t * 3 + k)) * 3); }
+        for (let k = 0; k < 4; k++) gob(look(k), 20 + k * 55, 100, Math.floor(t * 4 + k) % 2 ? 8 : 0, k % 2);
+      } else if (scene === 'pack') {
+        ground(100, '#7a6a3a');
+        ctx.fillStyle = '#8a5a30'; ctx.fillRect(150, 82, 70, 20); ctx.fillStyle = '#5a3a20'; ctx.fillRect(150, 82, 70, 3);
+        ctx.fillStyle = '#2a2a2a'; ctx.beginPath(); ctx.arc(162, 104, 6, 0, 7); ctx.arc(208, 104, 6, 0, 7); ctx.fill();
+        const boxes = ['#c8a060', '#a07040', '#d8b070', '#b08050'];
+        boxes.forEach((c, k) => { ctx.fillStyle = c; ctx.fillRect(154 + k * 16, 66 - (k % 2) * 8, 14, 16); ctx.fillStyle = '#5a3a20'; ctx.fillRect(154 + k * 16 + 6, 66 - (k % 2) * 8, 2, 16); });
+        for (let k = 0; k < 3; k++) { const hop = Math.abs(Math.sin(t * 6 + k)) * 6; gob({ ...look(k), tool: 'sack' }, 20 + k * 40, 76 - hop, 2 + Math.floor(t * 8 + k) % 4, false); }
+        ctx.drawImage(iconCanvas('hammer'), 120 + Math.sin(t * 4) * 10, 30 + ((t * 40) % 40));
+        ctx.drawImage(iconCanvas('coin'), 100, 20 + ((t * 50) % 60));
+      } else if (scene === 'march') {
+        const off = (t * 30) % 80;
+        ctx.fillStyle = '#c87a50';
+        for (let x = -80; x < W + 80; x += 80) { ctx.beginPath(); ctx.moveTo(x - off, 100); ctx.lineTo(x + 40 - off, 55); ctx.lineTo(x + 80 - off, 100); ctx.fill(); }
+        ground(100, '#6a9a3a');
+        ctx.fillStyle = '#8a7a4a'; ctx.fillRect(0, 108, W, 6);
+        for (let k = 0; k < 6; k++) gob({ ...look(k), tool: k % 2 ? 'sack' : look(k).tool }, 10 + k * 36, 86 + (k % 2), 2 + Math.floor(t * 8 + k) % 4, false);
+        ctx.font = '10px sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText('"Are we there yet?"', 120, 40);
+      } else if (scene === 'teeth') {
+        const pulse = 1 + Math.sin(t * 4) * 0.06, sz = 60 * pulse;
+        ctx.drawImage(iconCanvas('tooth'), W / 2 - sz / 2, 30 - (sz - 60) / 2, sz, sz);
+        for (let k = 0; k < 16; k++) { const a = t * 1.5 + k * 0.39, r = 50 + Math.sin(t * 3 + k) * 6; ctx.fillStyle = k % 2 ? '#ffe060' : '#fff8c0'; ctx.fillRect(W / 2 + Math.cos(a) * r, 60 + Math.sin(a) * r * 0.6, 2, 2); }
+        ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe060'; ctx.fillText('+' + fmt(gain), W / 2, 122); ctx.textAlign = 'left';
+      } else {
+        ground(96, '#5fa83e');
+        ctx.fillStyle = '#7a6a3a'; ctx.beginPath(); ctx.ellipse(W / 2, 112, 70, 12, 0, 0, 7); ctx.fill();
+        const f = Math.floor(t * 10) % 3;
+        ctx.fillStyle = '#ff7a20'; ctx.beginPath(); ctx.moveTo(W / 2 - 6, 110); ctx.lineTo(W / 2 + f - 1, 96); ctx.lineTo(W / 2 + 6, 110); ctx.fill();
+        for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2; gob(look(k), W / 2 - 13 + Math.cos(a) * 52, 86 + Math.sin(a) * 8, Math.floor(t * 3 + k) % 4 === 0 ? 8 : 0, Math.cos(a) > 0); }
+        ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = '#1c1424'; ctx.fillText('DAY 1', 8, 18);
+      }
+      ctx.strokeStyle = '#1c1424'; ctx.lineWidth = 3; ctx.strokeRect(1.5, 1.5, W - 3, H - 3);
+    };
+    const render = () => {
+      const sl = slides[i];
+      const keep = '<div class="row" style="align-items:flex-start;gap:6px;text-align:left"><div class="card grow small" style="margin:0"><b class="green-t">You KEEP</b><br>Goblins, levels & stars<br>Gear & treasures<br>Gems<br>Conquered regions<br>Huts, Cauldron, Infirmary, DJ Stand<br>Achievements & teeth</div><div class="card grow small" style="margin:0"><b class="red-t">Starts over</b><br>Business buildings<br>Gold (mushrooms 10%)<br>Capital level<br>Districts<br>Research</div></div>';
+      this.modal(`<div class="small muted">Pack Up the Capital · ${i + 1}/${slides.length}</div><h2 style="margin:2px 0 6px">${sl.title}</h2>
+        <canvas id="comic" width="${W}" height="${H}" style="width:100%;image-rendering:pixelated;border-radius:8px;cursor:pointer"></canvas>
+        ${sl.last ? keep : `<p>${sl.text}</p>`}
+        <div class="row" style="justify-content:center;gap:5px;margin:6px 0">${slides.map((_, k) => `<i style="width:8px;height:8px;border-radius:50%;background:${k === i ? '#e8a020' : 'rgba(0,0,0,.2)'}"></i>`).join('')}</div>
+        <div class="modal-actions">${i > 0 ? '<button class="btn ghost" id="cm-back">Back</button>' : '<button class="btn ghost" id="cm-cancel">Not yet</button>'}
+        ${sl.last ? `<button class="btn gold" id="cm-go">Pack Up & Move! (+${fmt(gain)} 🦷)</button>` : '<button class="btn" id="cm-next">Next ›</button>'}</div>`, { onClose: () => cancelAnimationFrame(raf) });
+      const cv = document.getElementById('comic'), ctx = cv.getContext('2d');
+      const loop = () => { draw(ctx, sl.scene, (performance.now() - t0) / 1000); raf = requestAnimationFrame(loop); };
+      cancelAnimationFrame(raf); loop();
+      const next = () => { if (i < slides.length - 1) { i++; sfx('whoosh'); render(); } };
+      cv.onclick = next;
+      const q = (id) => document.getElementById(id);
+      if (q('cm-next')) q('cm-next').onclick = next;
+      if (q('cm-back')) q('cm-back').onclick = () => { i--; render(); };
+      if (q('cm-cancel')) q('cm-cancel').onclick = () => this.closeModal();
+      if (q('cm-go')) q('cm-go').onclick = () => { cancelAnimationFrame(raf); this.closeModal(); onConfirm(); };
+    };
+    render();
+  }
+  bazaarHtml() {
+    const G = this.G;
+    const pretty = (o) => Object.entries(o).map(([k, v]) => `${iconImg(RES_ICON[k])} ${fmt(v)}`).join(' ');
+    let h = `<h3>Bazaar Trades</h3><p class="small muted" style="margin-top:0">Prices follow your income. A bigger Bazaar gives better rates (now ×${G.bazaarRate().toFixed(2)}).</p>`;
+    for (const k of G.TRADES) {
+      h += `<div class="list-item"><div class="grow"><b class="small">${G.tradeQuote(k).name}</b><div class="small" ${this.b(el => {
+        const q = G.tradeQuote(k), left = G.tradesLeft(k);
+        el.innerHTML = `Give ${pretty(q.give)} → Get <span class="green-t">${pretty(q.get)}</span>${left !== Infinity ? ` <span class="muted">(${left} left today)</span>` : ''}`;
+      })}></div></div><button class="btn small" data-act="exchange" data-k="${k}" ${this.b(el => el.classList.toggle('no', !G.canTrade(k)))}>Trade</button></div>`;
+    }
     return h;
   }
   moveBtn(id) { return `<div style="margin-top:10px"><button class="btn small ghost" data-act="move" data-id="${id}">${iconImg('hammer')} Move building</button></div>`; }
@@ -565,11 +659,15 @@ export class UI {
     const stage = st >= STAGES_PER_REGION ? STAGES_PER_REGION : next;
     const enemies = G.battleSetup(id, stage);
     const ep = enemies.reduce((t, e) => t + (e.hp / 6 + e.atk) / 2, 0);
-    const ratio = tp / ep;
+    const need = Math.ceil(ep * 0.9);
+    const chance = team.length ? winChance(team.map(g => G.goblinCombat(g)), enemies) : 0;
+    const pc = Math.round(chance * 100);
+    const col = pc >= 75 ? 'green-t' : pc >= 40 ? 'gold-t' : 'red-t';
     h += `<div class="card"><div class="bname center">${stage >= STAGES_PER_REGION ? '👑 BOSS: ' + r.boss.name : 'Stage ' + stage}</div>
       <div class="row" style="justify-content:center;gap:4px;margin:6px 0">${enemies.map(e => `<img src="${eThumb(e.kind, e.tint, e.boss)}" style="width:${e.boss ? 64 : 44}px">`).join('')}</div>
-      <div class="vs"><span>Your team<br><span class="pw green-t">${fmt(tp)}</span></span><span style="font-size:22px">VS</span><span style="text-align:right">Enemies<br><span class="pw red-t">${fmt(ep)}</span></span></div>
-      <div class="small center" style="margin-top:4px">${ratio > 1.4 ? '<span class="green-t">Easy win</span>' : ratio > 1 ? '<span class="gold-t">Should win</span>' : ratio > 0.75 ? '<span class="gold-t">Risky — tap and bomb a lot!</span>' : '<span class="red-t">Very dangerous — train your goblins!</span>'}</div>
+      <div class="vs"><span>Power needed<br><span class="pw gold-t">${fmt(need)}</span><br><span class="small ${tp >= need ? 'green-t' : 'red-t'}">Your team: ${fmt(tp)} ${tp >= need ? '✓' : '✗'}</span></span>
+        <span style="text-align:right">Chance to win<br><span class="pw ${col}">${pc}%</span><br><span class="small muted">if you use your attacks</span></span></div>
+      <div class="small center" style="margin-top:4px">${pc >= 90 ? '<span class="green-t">Should be easy.</span>' : pc >= 60 ? '<span class="gold-t">Good odds. Watch for red "!" attacks.</span>' : pc >= 25 ? '<span class="gold-t">Risky. Time your stuns and shields!</span>' : '<span class="red-t">Very dangerous. Train or heal your goblins first!</span>'}</div>
       <button class="btn gold wide" style="margin-top:8px" data-act="fight" data-id="${id}" data-stage="${stage}">${iconImg('sword')} ${st >= STAGES_PER_REGION ? 'Re-fight Boss (farm)' : 'FIGHT!'}</button></div>`;
     h += `<div class="card row"><div class="grow small"><b>Party:</b> ${team.map(g => esc(g.name.split(' ')[0])).join(', ')}<div class="small" ${this.b(el => { const f = team.reduce((t, g) => t + G.hpFrac(g), 0) / Math.max(1, team.length); el.innerHTML = f >= 0.999 ? '<span class="green-t">❤️ Full health</span>' : `<span class="red-t">❤️ Health ${Math.round(f * 100)}%</span> <span class="muted">· wounds carry into the next fight</span>`; })}></div></div><button class="btn small blue" data-act="party">Change</button></div>`;
     if (st > 0) {
@@ -702,13 +800,7 @@ export class UI {
       });
     } else h += `<div class="card paper center small">A shady merchant visits capitals of Level 8 or higher. Keep growing!</div>`;
     h += `<h3>Time Warp (gems → instant income)</h3><div class="row">${[1, 4, 12].map(hh => `<button class="btn purple grow buybtn small" data-act="warp" data-h="${hh}" ${this.b(el => { el.classList.toggle('no', G.s.gems < G.warpCost(hh)); el.innerHTML = `${hh}h<small>${iconImg('gem')}${G.warpCost(hh)}</small><small>${iconImg('coin')}${fmt(G.incomePerSec(false) * hh * 3600)}</small>`; })}></button>`).join('')}</div>`;
-    if (G.isBuilt('market')) {
-      h += `<h3>Bazaar Exchange</h3><div class="row wrap">
-        <button class="btn small grow" data-act="exchange" data-k="ore2gold">50 ${iconImg('ore')} → ${iconImg('coin')}</button>
-        <button class="btn small grow" data-act="exchange" data-k="mush2gold">100 ${iconImg('shroom')} → ${iconImg('coin')}</button>
-        <button class="btn small grow" data-act="exchange" data-k="gold2ore">${iconImg('coin')} → ${iconImg('ore')}</button>
-        <button class="btn small grow" data-act="exchange" data-k="gold2mush">${iconImg('coin')} → ${iconImg('shroom')}</button></div>`;
-    }
+    h += G.isBuilt('market') ? this.bazaarHtml() : `<h3>Bazaar Trades</h3><div class="card paper small center">Build the Bazaar of Bargains (Capital Lv 9) to trade gold, ore, mushrooms and gems.</div>`;
     h += `<h3>Brag</h3><button class="btn blue wide" data-act="share">${iconImg('share')} Share my capital</button>`;
     this.setBody(h);
   }
@@ -1302,14 +1394,14 @@ UI.prototype.acts = {
   'prestige'() {
     const G = this.G;
     if (!G.canPrestige()) { sfx('error'); return; }
-    this.confirm('Pack up the capital?', `You'll gain <b>${fmt(G.teethGain())} Golden Teeth</b> (+${fmt(G.teethGain() * 2)}% income forever). Buildings, gold, districts and research reset. Goblins, gear, treasures, gems & conquests stay.`, 'Move!', () => {
+    this.prestigeComic(() => {
       const n = G.prestige();
       this.closeSheet();
       this.world.terrainDirty = true;
       this.world.focusBuilding('shroom');
       sfx('levelup');
       this.modal(`<img src="${icon('tooth', 6)}" style="width:60px"><h2>New Capital, Same Goblins!</h2><p>Your goblins hauled everything to a fresh swamp, complaining the whole way.</p><p class="gold-t"><b>+${fmt(n)} Golden Teeth!</b></p><p class="small">Spend teeth in the Tooth Shrine (More → Prestige).</p><div class="modal-actions"><button class="btn gold" data-act="close-modal">Let's go!</button></div>`);
-    }, 'gold');
+    });
   },
   'reroll'() { if (this.G.rerollMerchant()) { sfx('coin'); this.rerender(); } else sfx('error'); },
   'buy-offer'(el) {
@@ -1321,7 +1413,17 @@ UI.prototype.acts = {
     const r = this.G.timeWarp(+el.dataset.h);
     if (r) { sfx('golden'); this.toast(`Time warp! +${fmt(r.gold)} gold`, 'good', 'hourglass'); this.flyCoins(innerWidth / 2, innerHeight / 2, 12); this.rerender(); } else sfx('error');
   },
-  'exchange'(el) { if (this.G.exchange(el.dataset.k)) { sfx('coin'); } else sfx('error'); },
+  'exchange'(el) {
+    const G = this.G, k = el.dataset.k, q = G.exchange(k);
+    const pretty = (o) => Object.entries(o).map(([r, v]) => `${fmt(v)} ${r === 'mushrooms' ? 'mushrooms' : r}`).join(', ');
+    if (q) { sfx('coin'); this.toast(`Traded ${pretty(q.give)} for ${pretty(q.get)}!`, 'good', 'bag'); this.refresh(); }
+    else {
+      sfx('error');
+      const tq = G.tradeQuote(k);
+      const miss = tq && Object.entries(tq.give).find(([r, v]) => G.s[r] < v);
+      this.toast(G.tradesLeft(k) <= 0 ? 'No more of that trade today. Come back tomorrow!' : miss ? `Not enough ${miss[0] === 'mushrooms' ? 'mushrooms' : miss[0]} (need ${fmt(miss[1])}).` : 'Build the Bazaar first!', 'bad');
+    }
+  },
   'share'() { this.share(); },
   'toggle'(el) {
     const s = this.G.s.settings, k = el.dataset.k;

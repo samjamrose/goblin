@@ -275,7 +275,18 @@ p { margin: 6px 0; line-height: 1.35; }
 #battle.show { display: flex; }
 #battle canvas { flex: 1; width: 100%; min-height: 0; touch-action: none; }
 .bt-top { display: flex; align-items: center; justify-content: space-between; padding: calc(8px + var(--safe-t)) 10px 8px; background: var(--wood); box-shadow: 0 2px 0 var(--ink); font-weight: 700; font-size: 15px; gap: 8px; }
-.bt-ctrl { display: flex; gap: 8px; padding: 10px 10px calc(10px + var(--safe-b)); background: var(--wood); box-shadow: 0 -2px 0 var(--ink); }
+.bt-ctrl { display: flex; flex-direction: column; gap: 8px; padding: 10px 10px calc(10px + var(--safe-b)); background: var(--wood); box-shadow: 0 -2px 0 var(--ink); }
+.bt-skills { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.skb { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 2px 5px; border-radius: 10px; background: linear-gradient(#5a4a8a, #3a2a5a); box-shadow: 0 0 0 2px var(--ink), inset 0 2px 0 rgba(255,255,255,.2), 0 3px 0 rgba(0,0,0,.35); color: #fff; font-size: 10px; font-weight: 700; line-height: 1.05; min-height: 62px; }
+.skb img.por { width: 30px; height: 32px; }
+.skb .sk-name { position: relative; z-index: 1; text-shadow: 0 1px 0 #000; }
+.skb .sk-ic { position: absolute; top: 3px; right: 3px; width: 14px; height: 14px; z-index: 1; }
+.skb::after { content: ''; position: absolute; inset: 0; background: conic-gradient(rgba(10,6,16,.72) var(--cd, 0%), transparent 0); pointer-events: none; }
+.skb.ready { background: linear-gradient(#7a5ad0, #4a2a8a); animation: skReady 1s infinite alternate; }
+.skb.dead { filter: grayscale(1) brightness(.5); pointer-events: none; }
+.skb .sk-t { position: absolute; top: 18px; left: 0; right: 0; text-align: center; font-size: 14px; z-index: 1; text-shadow: 0 1px 0 #000; }
+.skb:active { transform: translateY(2px); }
+@keyframes skReady { to { box-shadow: 0 0 0 2px var(--ink), inset 0 2px 0 rgba(255,255,255,.3), 0 0 10px #c8a0ff; } }
 .btn.bomb { flex: 1; position: relative; overflow: hidden; background: #4a3a3a; font-size: 17px; padding: 12px; }
 .btn.bomb::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--charge, 0%); background: linear-gradient(#ff9a3a, #c04a1a); transition: width .1s; }
 .btn.bomb span { position: relative; }

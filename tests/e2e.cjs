@@ -180,10 +180,17 @@ const SHOTS = process.env.SHOTS || null;
   await p.click('.stab[data-sub=regions]');
   await p.click('[data-act=region][data-id=woods]');
   await wait(150);
-  await ev(() => { const G = window.__game.G; for (const g of G.s.goblins) g.lvl = 15; });
+  await ev(() => { const G = window.__game.G; for (const g of G.s.goblins) g.lvl = 15; window.__game.ui.rerender(); });
+  await wait(200);
+  check(await p.locator('.sheet-body .vs').innerText().then(t => /Power needed/.test(t) && /Chance to win/.test(t) && /\d+%/.test(t)), 'battle preview shows power needed and win chance');
+  await shot('region-preview');
   await p.click('[data-act=fight]');
   await wait(800);
   check(await p.isVisible('#battle.show'), 'battle screen open');
+  check(await p.locator('#bt-skills .skb').count() >= 1, 'attack buttons shown');
+  await p.locator('#bt-skills .skb').first().dispatchEvent('pointerdown');
+  check(await ev(() => window.__game.battle.b.units.some(u => u.side === 'g' && u.skillCd > 0)), 'pressing an attack button uses the skill');
+  await shot('battle-skills');
   await p.click('#bt-speed'); await p.click('#bt-speed');
   for (let i = 0; i < 6; i++) await p.mouse.click(290, 560);
   await ev(() => { window.__game.battle.bombCharge = 1; });
@@ -219,6 +226,16 @@ const SHOTS = process.env.SHOTS || null;
   await ev(() => { const w = window.__game.world, p = window.__game.G.pos('dj'); w.cam.zoom = 3; w.focus((p.tx + 1) * 16, (p.ty + 1) * 16, false); });
   await wait(600);
   await shot('dj-map');
+
+  // ---- bazaar trading
+  await ev(() => { const G = window.__game.G; G.s.ore = 5000; window.__game.ui.openTab('build'); window.__game.ui.show({ tab: 'building', param: 'market' }, true); });
+  await wait(300);
+  const goldBefore = await ev(() => window.__game.G.s.gold);
+  await p.click('.sheet-body [data-act=exchange][data-k=ore2gold]');
+  await wait(150);
+  check(await ev((g0) => window.__game.G.s.gold > g0 && window.__game.G.s.ore < 4960, goldBefore), 'bazaar trade works from the Bazaar');
+  await shot('bazaar');
+  await ev(() => window.__game.ui.closeSheet());
 
   // ---- injuries & infirmary
   await ev(() => window.__game.ui.closeSheet());
@@ -294,7 +311,7 @@ const SHOTS = process.env.SHOTS || null;
   const fireBid = await ev(() => { const G = window.__game.G, w = window.__game.world; const f = G.rt.fires[0]; if (!f) return null; w.focusBuilding(f.bid); w.cam.x = w.camTarget.x; w.cam.y = w.camTarget.y; w.camTarget = null; w.cam.vx = w.cam.vy = 0; w.clampCam(); return f.bid; });
   await wait(100); await ev(() => { const w = window.__game.world; w.camTarget = null; w.cam.vx = w.cam.vy = 0; });
   if (fireBid) {
-    const pos = await ev((bid) => { const w = window.__game.world, d = window.__game.G.def(bid); return w.toScreen((d.tx + d.w / 2) * 16, (d.ty + d.h / 2) * 16); }, fireBid);
+    const pos = await ev((bid) => { const w = window.__game.world, d = window.__game.G.pos(bid); return w.toScreen((d.tx + d.w / 2) * 16, (d.ty + d.h / 2) * 16); }, fireBid);
     for (let i = 0; i < 3; i++) { await p.mouse.click(pos[0], pos[1]); await wait(80); }
     const fdiag = await ev(([x, y, bid]) => { const e = document.elementFromPoint(x, y); return (e && (e.id || e.className)) + ' ' + bid + ' fires=' + window.__game.G.rt.fires.map(f => f.bid + ':' + f.hp).join(','); }, [pos[0], pos[1], fireBid]);
     check(await ev(() => window.__game.G.s.stats.fires) >= 1, 'fire extinguished ' + fdiag);
@@ -365,9 +382,15 @@ const SHOTS = process.env.SHOTS || null;
   await wait(300);
   const goblinsBefore = await ev(() => window.__game.G.s.goblins.length);
   await p.click('[data-act=prestige]');
-  await wait(150);
-  await p.click('#m-yes');
-  await wait(400);
+  await wait(300);
+  check(await p.isVisible('#comic'), 'prestige comic shown');
+  await shot('comic1');
+  for (let k = 0; k < 4; k++) { await p.click('#cm-next'); await wait(250); }
+  await shot('comic5');
+  await p.click('#cm-go');
+  await wait(600);
+  check(await ev(() => { const w = window.__game.world, G = window.__game.G; return [...w.agents.values()].every(a => { const g = G.gob(a.uid); return !(g && g.assign && g.assign.t === 'b' && !G.isBuilt(g.assign.id)); }); }), 'no goblin left working at a removed building');
+  check(await ev(() => [...window.__game.world.agents.values()].every(a => a.state !== 'work' || !!window.__game.world.workSpot(a, window.__game.G.gob(a.uid)))), 'no goblin stuck at an old work spot');
   check(await ev(() => window.__game.G.s.teethEarned) > 0, 'prestige gave teeth');
   check(await ev(() => window.__game.G.s.goblins.length) === goblinsBefore, 'goblins kept after prestige');
   check(await ev(() => window.__game.G.s.buildings.mine.lvl) === 0, 'buildings reset after prestige');

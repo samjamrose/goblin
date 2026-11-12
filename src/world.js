@@ -241,6 +241,10 @@ export class World {
           if (py % 4 === 0 && n2 > 0.6) col = [120, 170, 50];
         } else {
           let gp = pal.grass;
+          // warp the district lookup with noise so ground types blend in wavy, natural edges
+          const wx = px + (noise(px + 999, py, 23) - 0.5) * 46 + (noise(px, py + 555, 7) - 0.5) * 12;
+          const wy = py + (noise(px, py + 999, 23) - 0.5) * 46 + (noise(px + 333, py, 7) - 0.5) * 12;
+          const d = this.districtAt(Math.floor(wx / TILE), Math.floor(wy / TILE)) || (wx < 0 || wy < 0 || wx >= WW || wy >= WH ? this.districtAt(tx, ty) : null);
           if (!d) gp = n > 0.55 ? pal.grassDark : pal.grass;
           else if (d.ground === 'mud') gp = n > 0.68 ? pal.mud : pal.grass;
           else if (d.ground === 'dark') gp = pal.grassDark;
@@ -526,6 +530,7 @@ export class World {
   }
   workSpot(a, g) {
     if (g.assign?.t === 'b') {
+      if (!this.G.isBuilt(g.assign.id)) return null;
       const b = this.G.pos(g.assign.id);
       const n = this.G.workers(b.id).indexOf(g);
       const offs = [0, -1, 1, -2];

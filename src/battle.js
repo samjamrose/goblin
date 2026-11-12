@@ -1,6 +1,6 @@
 // Battle screen: renders a battlesim with juicy feedback and tap interactions.
-import { createBattle, stepBattle, damage } from './battlesim.js';
-import { goblinSheet, GOB_W, GOB_H, enemySprite, iconCanvas, shade } from './sprites.js';
+import { createBattle, stepBattle, damage, useSkill } from './battlesim.js';
+import { goblinSheet, GOB_W, GOB_H, enemySprite, iconCanvas, shade, goblinPortrait, icon } from './sprites.js';
 import { fmt, clamp } from './util.js';
 
 const FONT = '"Pixelify Sans", "Trebuchet MS", sans-serif';
@@ -15,6 +15,13 @@ export class BattleScreen {
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.cv.addEventListener('pointerdown', e => this.onTap(e));
     root.querySelector('#bt-bomb').addEventListener('click', () => this.bomb());
+    root.querySelector('#bt-auto').addEventListener('click', () => { this.auto = !this.auto; if (this.b) this.b.opts.autoSkills = this.auto; root.querySelector('#bt-auto').textContent = 'Auto: ' + (this.auto ? 'on' : 'off'); });
+    root.querySelector('#bt-skills').addEventListener('pointerdown', (e) => {
+      const btn = e.target.closest('.skb'); if (!btn || !this.b) return;
+      const u = this.b.units.find(x => x.id === +btn.dataset.id);
+      if (u && useSkill(this.b, u)) { this.hooks.sfx('throw'); this.hooks.haptic && this.hooks.haptic(10); }
+      else this.hooks.sfx('error');
+    });
     root.querySelector('#bt-speed').addEventListener('click', () => { this.speed = this.speed === 1 ? 2 : this.speed === 2 ? 3 : 1; root.querySelector('#bt-speed').textContent = '×' + this.speed; });
     root.querySelector('#bt-flee').addEventListener('click', () => { if (this.b && !this.b.over) { this.b.over = true; this.b.winner = 'e'; this.fled = true; } });
   }
@@ -53,6 +60,9 @@ export class BattleScreen {
     };
     place(gs, 'g'); place(es, 'e');
     for (const u of this.b.units) { u.ox = 0; u.oy = 0; u.flash = 0; u.dead = 0; }
+    this.b.opts.autoSkills = !!this.auto;
+    this.root.querySelector('#bt-auto').textContent = 'Auto: ' + (this.auto ? 'on' : 'off');
+    this.root.querySelector('#bt-skills').innerHTML = gs.map(u => `<button class="skb" data-id="${u.id}" title="${u.skill.desc}"><img class="por" src="${goblinPortrait(u.look, 2)}"><img class="sk-ic" src="${icon(u.skill.icon)}"><span class="sk-t"></span><span class="sk-name">${u.skill.name}</span></button>`).join('');
     this.hooks.sfx('battle');
     this.hooks.music && this.hooks.music(cfg.music || 'battle');
   }
@@ -151,6 +161,22 @@ export class BattleScreen {
         u.ox += (u.side === 'g' ? -1 : 1) * 5;
         this.fx.push({ x: x + (Math.random() - 0.5) * 20, y: y - 26 * this.unitScale, text: fmt(f.v), t: 0, crit: f.crit, c: u.side === 'g' ? '#ff6a6a' : f.crit ? '#ffe060' : '#fff' });
         if (f.crit) this.spark(x, y - 10 * this.unitScale, '#ffe060', 8);
+      } else if (f.type === 'skill') {
+        this.fx.push({ x, y: y - 34 * this.unitScale, text: f.name + '!', t: 0, crit: true, c: '#c8a0ff' });
+        this.spark(x, y - 14 * this.unitScale, '#c8a0ff', 10);
+        if (f.kind === 'all') this.boom(this.w * 0.78, this.h * 0.7);
+      } else if (f.type === 'block') {
+        this.fx.push({ x, y: y - 26 * this.unitScale, text: 'BLOCK', t: 0, crit: false, c: '#8ad8ff' });
+      } else if (f.type === 'heal') {
+        this.fx.push({ x, y: y - 26 * this.unitScale, text: '+' + fmt(f.v), t: 0, crit: false, c: '#7aff6a' });
+        this.spark(x, y - 12 * this.unitScale, '#7aff6a', 10);
+      } else if (f.type === 'charge') {
+        this.hooks.sfx('alarm');
+      } else if (f.type === 'interrupt') {
+        this.fx.push({ x, y: y - 40 * this.unitScale, text: 'INTERRUPTED!', t: 0, crit: true, c: '#ffe060' });
+      } else if (f.type === 'special') {
+        this.shakeT = 0.3; this.hooks.sfx('boom');
+        this.fx.push({ x, y: y - 40 * this.unitScale, text: u.boss ? 'STOMP!' : 'SMASH!', t: 0, crit: true, c: '#ff5a5a' });
       } else if (f.type === 'die') {
         this.spark(x, y - 10 * this.unitScale, u.side === 'g' ? '#7aff6a' : '#ddd', 16);
         this.hooks.sfx(u.side === 'g' ? 'ouch' : 'ko');
@@ -170,6 +196,15 @@ export class BattleScreen {
     if (b.over && !this.ended) {
       this.endT += dt;
       if (this.endT > 0.9) { this.ended = true; this.finish(); }
+    }
+    for (const btn of this.root.querySelectorAll('.skb')) {
+      const u = b.units.find(x => x.id === +btn.dataset.id); if (!u) continue;
+      const frac = u.skillCd / u.skill.cd;
+      btn.style.setProperty('--cd', (frac * 100).toFixed(1) + '%');
+      btn.classList.toggle('ready', u.alive && u.skillCd <= 0 && !b.over);
+      btn.classList.toggle('dead', !u.alive);
+      const t = btn.querySelector('.sk-t'); const txt = u.alive && u.skillCd > 0 ? Math.ceil(u.skillCd) : '';
+      if (t.textContent !== String(txt)) t.textContent = txt;
     }
     const bombBtn = this.root.querySelector('#bt-bomb');
     bombBtn.style.setProperty('--charge', (this.bombCharge * 100).toFixed(0) + '%');
@@ -238,10 +273,10 @@ export class BattleScreen {
     const tl = Math.max(0, this.b.timeLimit - this.b.t);
     ctx.font = `700 14px ${FONT}`; ctx.fillStyle = tl < 15 ? '#ff6a6a' : '#fff'; ctx.strokeStyle = '#1c1424'; ctx.lineWidth = 3;
     ctx.strokeText('⏱ ' + Math.ceil(tl) + 's', w / 2, 16); ctx.fillText('⏱ ' + Math.ceil(tl) + 's', w / 2, 16);
-    if (this.t < 2.5 && this.pokes === 0) {
-      ctx.globalAlpha = Math.min(1, (2.5 - this.t) * 2);
-      ctx.font = `700 15px ${FONT}`;
-      ctx.strokeText('Tap enemies to poke them!', w / 2, h * 0.88); ctx.fillStyle = '#ffe060'; ctx.fillText('Tap enemies to poke them!', w / 2, h * 0.88);
+    if (this.t < 4) {
+      ctx.globalAlpha = Math.min(1, (4 - this.t) * 2);
+      ctx.font = `700 12px ${FONT}`;
+      ctx.strokeText('Use attack buttons! Stun or shield a red "!"', w / 2, h * 0.93); ctx.fillStyle = '#ffe060'; ctx.fillText('Use attack buttons! Stun or shield a red "!"', w / 2, h * 0.93);
       ctx.globalAlpha = 1;
     }
     ctx.restore();
@@ -290,6 +325,23 @@ export class BattleScreen {
     if (u.flash > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = u.flash * 5 * alpha; ctx.drawImage(sprite, frameX, 0, sw, sh, -dw / 2, -dh, dw, dh); ctx.globalCompositeOperation = 'source-over'; }
     ctx.restore();
     ctx.globalAlpha = alpha;
+    if (u.alive && u.side === 'e' && u.charge > 0) {
+      // telegraphed special attack: pulsing warning + wind-up bar
+      const k = 1 - u.charge / 1.6, pulse = 0.6 + Math.sin(this.t * 20) * 0.4;
+      ctx.fillStyle = `rgba(255,60,60,${0.25 * pulse})`; ctx.beginPath(); ctx.ellipse(x, y - dh / 2, dw * 0.55, dh * 0.6, 0, 0, 7); ctx.fill();
+      ctx.font = `700 ${Math.round(14 + 6 * pulse)}px ${FONT}`; ctx.textAlign = 'center'; ctx.lineWidth = 4; ctx.strokeStyle = '#1c1424'; ctx.fillStyle = '#ff4a4a';
+      ctx.strokeText('!', x, y - dh - 22); ctx.fillText('!', x, y - dh - 22);
+      ctx.fillStyle = '#1c1424'; ctx.fillRect(x - 16, y - dh - 16, 32, 4); ctx.fillStyle = '#ff4a4a'; ctx.fillRect(x - 15, y - dh - 15, 30 * k, 2);
+    }
+    if (u.alive && u.stun > 0) {
+      ctx.fillStyle = '#ffe060';
+      for (let i = 0; i < 3; i++) { const a = this.t * 6 + i * 2.1; ctx.fillRect(x + Math.cos(a) * 10 - 1, y - dh - 4 + Math.sin(a) * 3, 3, 3); }
+    }
+    if (u.alive && u.side === 'g' && this.b.shield > 0) {
+      ctx.strokeStyle = `rgba(138,216,255,${0.5 + Math.sin(this.t * 6) * 0.2})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(x, y - dh / 2, dw * 0.5, dh * 0.6, 0, 0, 7); ctx.stroke();
+    }
+    if (u.alive && u.side === 'g' && this.b.rally > 0 && Math.random() < 0.2) this.spark(x + (Math.random() - 0.5) * dw * 0.6, y - Math.random() * dh, '#ffb030', 1);
     // hp bar
     if (u.alive) {
       const bw = Math.max(26, 14 * s), by = y - dh - 8;
