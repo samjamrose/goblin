@@ -101,7 +101,7 @@ for (let sec = 0; sec < totalSec; sec++) {
       const team = G.battleTeam().map(g => G.goblinCombat(g));
       const b = resolveInstant(team, G.battleSetup(r.id, st + 1));
       // player taps/bombs add ~25%
-      const team2 = team.map(u => ({ ...u, atk: u.atk * 1.25 }));
+      const team2 = team;
       const b2 = resolveInstant(team2, G.battleSetup(r.id, st + 1));
       G.finishBattle(r.id, st + 1, b2.winner === 'g');
       if (b2.winner === 'g' && (st + 1) % 5 === 0) log(`Cleared ${r.id} stage ${st + 1} (team power ${fmt(G.battleTeam().reduce((t, g) => t + G.goblinPower(g), 0))})`);

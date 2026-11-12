@@ -273,6 +273,7 @@ p { margin: 6px 0; line-height: 1.35; }
 /* ---------- battle */
 #battle { position: absolute; inset: 0; z-index: 40; background: #1c1424; display: none; flex-direction: column; }
 #battle.show { display: flex; }
+#battle.paused canvas { filter: saturate(.5) brightness(.75); }
 #battle canvas { flex: 1; width: 100%; min-height: 0; touch-action: none; }
 .bt-top { display: flex; align-items: center; justify-content: space-between; padding: calc(8px + var(--safe-t)) 10px 8px; background: var(--wood); box-shadow: 0 2px 0 var(--ink); font-weight: 700; font-size: 15px; gap: 8px; }
 .bt-ctrl { display: flex; flex-direction: column; gap: 8px; padding: 10px 10px calc(10px + var(--safe-b)); background: var(--wood); box-shadow: 0 -2px 0 var(--ink); }

@@ -5,6 +5,7 @@ import { BattleScreen } from './battle.js';
 import { UI } from './ui.js';
 import { sfx, setSfx, setMusic, unlockAudio, setTownTrack, setMusicMode, TRACKS } from './audio.js';
 import { createCloud } from './cloud.js';
+import { createLeaderboard } from './leaderboard.js';
 import { BUILDING_BY_ID, TILE, TREASURES, REGION_BY_ID } from './data.js';
 import { fmt } from './util.js';
 import { goblinPortrait, icon } from './sprites.js';
@@ -161,6 +162,13 @@ async function boot() {
   let keepLocal = false;
   try { keepLocal = store && store.getItem('gct_keep_local') === '1'; if (keepLocal) store.removeItem('gct_keep_local'); } catch (e) { }
   cloud.connect(keepLocal);
+  // real-player leaderboard
+  const lb = createLeaderboard(G);
+  ui.lb = lb;
+  lb.onChange(() => { if (ui.view && ui.view.tab === 'more' && ui.view.sub === 'league') ui.rerender(); });
+  lb.connect();
+  setInterval(() => lb.push(false), 15000);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) lb.push(true); });
   window.addEventListener('pointerdown', unlockAudio, { once: true });
 }
 

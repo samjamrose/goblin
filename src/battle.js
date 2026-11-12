@@ -1,5 +1,5 @@
 // Battle screen: renders a battlesim with juicy feedback and tap interactions.
-import { createBattle, stepBattle, damage, useSkill } from './battlesim.js';
+import { createBattle, stepBattle, damage, useSkill, setFocus } from './battlesim.js';
 import { goblinSheet, GOB_W, GOB_H, enemySprite, iconCanvas, shade, goblinPortrait, icon } from './sprites.js';
 import { fmt, clamp } from './util.js';
 
@@ -15,11 +15,12 @@ export class BattleScreen {
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.cv.addEventListener('pointerdown', e => this.onTap(e));
     root.querySelector('#bt-bomb').addEventListener('click', () => this.bomb());
+    root.querySelector('#bt-pause').addEventListener('click', () => { this.paused = !this.paused; root.querySelector('#bt-pause').textContent = this.paused ? '▶' : '⏸'; root.classList.toggle('paused', this.paused); });
     root.querySelector('#bt-auto').addEventListener('click', () => { this.auto = !this.auto; if (this.b) this.b.opts.autoSkills = this.auto; root.querySelector('#bt-auto').textContent = 'Auto: ' + (this.auto ? 'on' : 'off'); });
     root.querySelector('#bt-skills').addEventListener('pointerdown', (e) => {
       const btn = e.target.closest('.skb'); if (!btn || !this.b) return;
       const u = this.b.units.find(x => x.id === +btn.dataset.id);
-      if (u && useSkill(this.b, u)) { this.hooks.sfx('throw'); this.hooks.haptic && this.hooks.haptic(10); }
+      if (u && !this.paused && useSkill(this.b, u)) { this.pokes++; this.hooks.sfx('throw'); this.hooks.haptic && this.hooks.haptic(10); }
       else this.hooks.sfx('error');
     });
     root.querySelector('#bt-speed').addEventListener('click', () => { this.speed = this.speed === 1 ? 2 : this.speed === 2 ? 3 : 1; root.querySelector('#bt-speed').textContent = '×' + this.speed; });
@@ -41,6 +42,7 @@ export class BattleScreen {
     this.fled = false;
     this.shakeT = 0;
     this.flying = [];
+    this.paused = false; this.root.querySelector('#bt-pause').textContent = '⏸'; this.root.classList.remove('paused');
     this.root.classList.add('show');
     this.root.querySelector('#bt-title').textContent = cfg.title;
     this.root.querySelector('#bt-speed').textContent = '×' + this.speed;
@@ -98,13 +100,8 @@ export class BattleScreen {
       if (d < bd) { bd = d; best = u; }
     }
     if (best && bd < 40 * this.unitScale) {
-      const team = this.b.units.filter(u => u.side === 'g');
-      const atk = team.reduce((t, u) => t + u.atk, 0);
-      damage(this.b, best, atk * 0.06, null, false);
-      this.pokes++;
-      this.bombCharge = Math.min(1, this.bombCharge + 0.015);
-      best.ox += 6;
-      this.spark(x, y, '#fff', 6);
+      // tap an enemy to focus it: all basic attacks and single-target skills hit it
+      setFocus(this.b, best);
       this.hooks.sfx('poke');
       this.hooks.haptic && this.hooks.haptic(5);
     }
@@ -142,9 +139,9 @@ export class BattleScreen {
   update(dt) {
     if (!this.active) return;
     const b = this.b;
-    this.t += dt;
+    if (!this.paused) this.t += dt;
     const sdt = dt * this.speed;
-    if (!b.over) {
+    if (!b.over && !this.paused) {
       stepBattle(b, sdt);
       this.bombCharge = Math.min(1, this.bombCharge + sdt / 7);
     }
@@ -177,6 +174,9 @@ export class BattleScreen {
       } else if (f.type === 'special') {
         this.shakeT = 0.3; this.hooks.sfx('boom');
         this.fx.push({ x, y: y - 40 * this.unitScale, text: u.boss ? 'STOMP!' : 'SMASH!', t: 0, crit: true, c: '#ff5a5a' });
+      } else if (f.type === 'enrage') {
+        this.shakeT = 0.4; this.hooks.sfx('alarm');
+        this.fx.push({ x, y: y - 46 * this.unitScale, text: 'ENRAGED!', t: 0, crit: true, c: '#ff3a6a' });
       } else if (f.type === 'die') {
         this.spark(x, y - 10 * this.unitScale, u.side === 'g' ? '#7aff6a' : '#ddd', 16);
         this.hooks.sfx(u.side === 'g' ? 'ouch' : 'ko');
@@ -273,10 +273,11 @@ export class BattleScreen {
     const tl = Math.max(0, this.b.timeLimit - this.b.t);
     ctx.font = `700 14px ${FONT}`; ctx.fillStyle = tl < 15 ? '#ff6a6a' : '#fff'; ctx.strokeStyle = '#1c1424'; ctx.lineWidth = 3;
     ctx.strokeText('⏱ ' + Math.ceil(tl) + 's', w / 2, 16); ctx.fillText('⏱ ' + Math.ceil(tl) + 's', w / 2, 16);
-    if (this.t < 4) {
-      ctx.globalAlpha = Math.min(1, (4 - this.t) * 2);
+    if (this.t < 5) {
+      ctx.globalAlpha = Math.min(1, (5 - this.t) * 2);
       ctx.font = `700 12px ${FONT}`;
-      ctx.strokeText('Use attack buttons! Stun or shield a red "!"', w / 2, h * 0.93); ctx.fillStyle = '#ffe060'; ctx.fillText('Use attack buttons! Stun or shield a red "!"', w / 2, h * 0.93);
+      const tip = 'Tap an enemy to focus it. Stun or shield the red "!"';
+      ctx.strokeText(tip, w / 2, h * 0.93); ctx.fillStyle = '#ffe060'; ctx.fillText(tip, w / 2, h * 0.93);
       ctx.globalAlpha = 1;
     }
     ctx.restore();
@@ -332,6 +333,18 @@ export class BattleScreen {
       ctx.font = `700 ${Math.round(14 + 6 * pulse)}px ${FONT}`; ctx.textAlign = 'center'; ctx.lineWidth = 4; ctx.strokeStyle = '#1c1424'; ctx.fillStyle = '#ff4a4a';
       ctx.strokeText('!', x, y - dh - 22); ctx.fillText('!', x, y - dh - 22);
       ctx.fillStyle = '#1c1424'; ctx.fillRect(x - 16, y - dh - 16, 32, 4); ctx.fillStyle = '#ff4a4a'; ctx.fillRect(x - 15, y - dh - 15, 30 * k, 2);
+    }
+    if (u.alive && u.side === 'e' && !(u.charge > 0) && u.spCd < 6) {
+      // enemy intent: seconds until its next big attack
+      ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = '#1c1424';
+      ctx.fillStyle = u.spCd < 2.5 ? '#ff8a5a' : '#ffe0a0';
+      const txt = (u.boss ? 'STOMP ' : 'SMASH ') + Math.ceil(u.spCd);
+      ctx.strokeText(txt, x, y - dh - 20); ctx.fillText(txt, x, y - dh - 20);
+    }
+    if (u.alive && this.b.focus === u.id) {
+      // focus target reticle
+      ctx.strokeStyle = '#ffe060'; ctx.lineWidth = 2; const r = Math.max(dw, dh) * 0.45, cy = y - dh / 2, a = this.t * 2;
+      for (let k = 0; k < 4; k++) { const ang = a + k * Math.PI / 2; ctx.beginPath(); ctx.arc(x, cy, r, ang, ang + 0.7); ctx.stroke(); }
     }
     if (u.alive && u.stun > 0) {
       ctx.fillStyle = '#ffe060';

@@ -1,10 +1,10 @@
 // Offline support for the installed Goblinsburg web app.
 // Network first (so updates arrive right away), falling back to the cached copy when offline.
-const CACHE = 'goblinsburg-v2';
+const CACHE = 'goblinsburg-v3';
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png',
   'src/style.css', 'src/main.js', 'src/game.js', 'src/data.js', 'src/util.js', 'src/battlesim.js',
-  'src/world.js', 'src/battle.js', 'src/ui.js', 'src/sprites.js', 'src/audio.js', 'src/cloud.js',
+  'src/world.js', 'src/battle.js', 'src/ui.js', 'src/sprites.js', 'src/audio.js', 'src/cloud.js', 'src/config.js', 'src/leaderboard.js',
 ];
 
 self.addEventListener('install', (e) => {

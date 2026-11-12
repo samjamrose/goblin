@@ -588,7 +588,7 @@ export const DAILY_TEMPLATES = [
   { id: 'golden', text: 'Catch {n} Golden Goblins', stat: 'golden', n: [1, 2, 3], reward: { gems: 25 } },
   { id: 'events', text: 'Handle {n} goblin incidents', stat: 'events', n: [2, 3, 4], reward: { gems: 15 } },
   { id: 'train', text: 'Train goblins {n} times', stat: 'trains', n: [5, 10, 20], reward: { gems: 15 } },
-  { id: 'taps', text: 'Poke enemies {n} times in battle', stat: 'pokes', n: [30, 60, 100], reward: { gems: 15 }, needs: 'combat' },
+  { id: 'taps', text: 'Use goblin attacks {n} times in battle', stat: 'pokes', n: [8, 15, 25], reward: { gems: 15 }, needs: 'combat' },
 ];
 
 // Guided story quests (onboarding + long goals). check(state, G) returns progress 0..1 handled in game.js

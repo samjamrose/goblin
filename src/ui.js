@@ -5,7 +5,7 @@ import {
   LOGIN_REWARDS, PRESTIGE_MIN_GOLD, xpForLevel, ENEMIES, MILESTONES, RANKS, TILE, TRACK_UNLOCKS,
 } from './data.js';
 import { fmt, fmtTime, clamp, pct } from './util.js';
-import { winChance } from './battlesim.js';
+import { winMargin } from './battlesim.js';
 import { icon, iconImg, goblinPortrait, buildingSprite, enemySprite, makeCanvas, GOB_W, GOB_H, goblinSheet, iconCanvas } from './sprites.js';
 import { sfx, setSfx, setMusic, unlockAudio, TRACKS, setTownTrack } from './audio.js';
 
@@ -660,14 +660,15 @@ export class UI {
     const enemies = G.battleSetup(id, stage);
     const ep = enemies.reduce((t, e) => t + (e.hp / 6 + e.atk) / 2, 0);
     const need = Math.ceil(ep * 0.9);
-    const chance = team.length ? winChance(team.map(g => G.goblinCombat(g)), enemies) : 0;
-    const pc = Math.round(chance * 100);
-    const col = pc >= 75 ? 'green-t' : pc >= 40 ? 'gold-t' : 'red-t';
+    const m = team.length ? winMargin(team.map(g => G.goblinCombat(g)), enemies) : Infinity;
+    const spare = m <= 1 ? Math.round((1 / m - 1) * 100) : 0, short = m > 1 ? Math.round((m - 1) * 100) : 0;
+    const outlook = !isFinite(m) ? '<span class="red-t">Out of reach</span>' : m <= 1 ? `<span class="green-t">WIN</span>` : `<span class="red-t">LOSS</span>`;
+    const detail = !isFinite(m) ? 'far too strong for now' : m <= 1 ? `${spare}% power to spare` : `need ${short}% more power`;
     h += `<div class="card"><div class="bname center">${stage >= STAGES_PER_REGION ? '👑 BOSS: ' + r.boss.name : 'Stage ' + stage}</div>
       <div class="row" style="justify-content:center;gap:4px;margin:6px 0">${enemies.map(e => `<img src="${eThumb(e.kind, e.tint, e.boss)}" style="width:${e.boss ? 64 : 44}px">`).join('')}</div>
       <div class="vs"><span>Power needed<br><span class="pw gold-t">${fmt(need)}</span><br><span class="small ${tp >= need ? 'green-t' : 'red-t'}">Your team: ${fmt(tp)} ${tp >= need ? '✓' : '✗'}</span></span>
-        <span style="text-align:right">Chance to win<br><span class="pw ${col}">${pc}%</span><br><span class="small muted">if you use your attacks</span></span></div>
-      <div class="small center" style="margin-top:4px">${pc >= 90 ? '<span class="green-t">Should be easy.</span>' : pc >= 60 ? '<span class="gold-t">Good odds. Watch for red "!" attacks.</span>' : pc >= 25 ? '<span class="gold-t">Risky. Time your stuns and shields!</span>' : '<span class="red-t">Very dangerous. Train or heal your goblins first!</span>'}</div>
+        <span style="text-align:right">Expected result<br><span class="pw">${outlook}</span><br><span class="small muted">${detail}</span></span></div>
+      <div class="small center" style="margin-top:4px">No luck in battles: good timing wins. ${m <= 0.8 ? '<span class="green-t">Should be easy.</span>' : m <= 1 ? '<span class="gold-t">Close! Focus the right enemy and stun the red "!".</span>' : m <= 1.25 ? '<span class="gold-t">Possible with great timing: combos, focus and shields.</span>' : '<span class="red-t">Train, gear up or heal first.</span>'}</div>
       <button class="btn gold wide" style="margin-top:8px" data-act="fight" data-id="${id}" data-stage="${stage}">${iconImg('sword')} ${st >= STAGES_PER_REGION ? 'Re-fight Boss (farm)' : 'FIGHT!'}</button></div>`;
     h += `<div class="card row"><div class="grow small"><b>Party:</b> ${team.map(g => esc(g.name.split(' ')[0])).join(', ')}<div class="small" ${this.b(el => { const f = team.reduce((t, g) => t + G.hpFrac(g), 0) / Math.max(1, team.length); el.innerHTML = f >= 0.999 ? '<span class="green-t">❤️ Full health</span>' : `<span class="red-t">❤️ Health ${Math.round(f * 100)}%</span> <span class="muted">· wounds carry into the next fight</span>`; })}></div></div><button class="btn small blue" data-act="party">Change</button></div>`;
     if (st > 0) {
@@ -829,8 +830,20 @@ export class UI {
     const rows = G.leagueBoard();
     const end = G.s.league.week + 7 * 86400e3;
     let h = '';
+    // ---- real players
+    const lb = this.lb;
+    h += `<h3>🌍 Real Players · this week</h3>`;
+    if (!lb || lb.status === 'unconfigured') h += `<div class="card paper small center">The online leaderboard for the home-screen app isn't switched on yet. Once it is, you'll see your friends here.</div>`;
+    else if (lb.status !== 'ok') h += `<div class="card paper small center">${esc(lb.status)}</div>`;
+    else {
+      const real = lb.board();
+      real.slice(0, 50).forEach((r, i) => { h += `<div class="lb-row ${r.me ? 'me' : ''} ${i < 3 ? 'top' : ''}"><span class="rk">${i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</span><span class="grow">${esc(r.name)}${r.me ? ' (You)' : ''} <span class="small muted">Lv ${r.level || 1}</span></span><span class="sc">${fmt(r.score)}</span></div>`; });
+      if (real.length < 2) h += `<p class="small muted center">No one else yet. Share the game with your friends!</p>`;
+      h += `<p class="small muted center">Gold earned this week. Resets every Monday. Shown by capital name.</p>`;
+    }
+    h += `<h3>🤖 Goblin Bot League</h3><p class="small muted" style="margin-top:0">These rivals are computer-controlled goblin chiefs, not real people. Beat them for weekly gems.</p>`;
     if (G.s.leaguePending) h += `<div class="card hl center"><p>Last week you finished <b>#${G.s.leaguePending.rank}</b>!</p><button class="btn gold" data-act="claim-league">Claim ${iconImg('gem')} ${G.s.leaguePending.gems}</button></div>`;
-    h += `<div class="card paper center small"><b>Weekly Tribal League</b> — gold earned this week vs. rival goblin chiefs. Ends in <b ${this.b(el => el.textContent = fmtTime((end - G.now()) / 1000))}></b>.<br>Rewards: #1 ${iconImg('gem')}300 · Top 3 ${iconImg('gem')}150 · Top 10 ${iconImg('gem')}60</div>`;
+    h += `<div class="card paper center small"><b>Weekly Bot League</b>: gold earned this week vs. computer goblin chiefs. Ends in <b ${this.b(el => el.textContent = fmtTime((end - G.now()) / 1000))}></b>.<br>Rewards: #1 ${iconImg('gem')}300 · Top 3 ${iconImg('gem')}150 · Top 10 ${iconImg('gem')}60</div>`;
     rows.forEach((r, i) => {
       h += `<div class="lb-row ${r.me ? 'me' : ''} ${i < 3 ? 'top' : ''}"><span class="rk">${i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</span><span class="grow">${esc(r.name)}</span><span class="sc">${fmt(r.score)}</span></div>`;
     });
@@ -1348,7 +1361,7 @@ UI.prototype.acts = {
     const G = this.G;
     this.pickGoblins({
       title: 'Battle Party', max: 4, filter: g => G.canFight(g), selected: G.battleTeam().map(g => g.uid),
-      info: (sel) => `Team power: <b>${fmt(sel.reduce((t, u) => t + G.goblinPower(G.gob(u)), 0))}</b> · Warriors tank, Thieves crit, Alchemists splash, Scouts attack fast.`,
+      info: (sel) => `Team power: <b>${fmt(sel.reduce((t, u) => t + G.goblinPower(G.gob(u)), 0))}</b> · Pick order = formation: your <b>1st pick stands in front</b> and takes the enemy's hits, so put a Warrior first.`,
       onDone: (sel) => { G.s.party = sel; this.rerender(); },
     });
   },

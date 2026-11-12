@@ -182,7 +182,7 @@ const SHOTS = process.env.SHOTS || null;
   await wait(150);
   await ev(() => { const G = window.__game.G; for (const g of G.s.goblins) g.lvl = 15; window.__game.ui.rerender(); });
   await wait(200);
-  check(await p.locator('.sheet-body .vs').innerText().then(t => /Power needed/.test(t) && /Chance to win/.test(t) && /\d+%/.test(t)), 'battle preview shows power needed and win chance');
+  check(await p.locator('.sheet-body .vs').innerText().then(t => /Power needed/.test(t) && /Expected result/.test(t) && /(WIN|LOSS|reach)/.test(t)), 'battle preview shows power needed and expected result');
   await shot('region-preview');
   await p.click('[data-act=fight]');
   await wait(800);
@@ -191,6 +191,10 @@ const SHOTS = process.env.SHOTS || null;
   await p.locator('#bt-skills .skb').first().dispatchEvent('pointerdown');
   check(await ev(() => window.__game.battle.b.units.some(u => u.side === 'g' && u.skillCd > 0)), 'pressing an attack button uses the skill');
   await shot('battle-skills');
+  {
+    const ep = await ev(() => { const bt = window.__game.battle, u = bt.b.units.find(x => x.side === 'e' && x.alive); if (!u) return null; const [x, y] = bt.pos(u); const r = bt.cv.getBoundingClientRect(); return [r.left + x, r.top + y - 12 * bt.unitScale, u.id]; });
+    if (ep) { await p.mouse.click(ep[0], ep[1]); await wait(100); check(await ev((id) => window.__game.battle.b.over || window.__game.battle.b.focus === id, ep[2]), 'tapping an enemy focuses it'); }
+  }
   await p.click('#bt-speed'); await p.click('#bt-speed');
   for (let i = 0; i < 6; i++) await p.mouse.click(290, 560);
   await ev(() => { window.__game.battle.bombCharge = 1; });
