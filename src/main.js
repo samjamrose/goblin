@@ -95,6 +95,7 @@ async function boot() {
     world.buildGrid(); world.terrainDirty = true;
   });
   G.on('teethEarned', (n) => { if (G.s.tut.intro) ui.toast(`🦷 +${fmt(n)} Golden Teeth! (+${fmt(n * 2)}% income forever)`, 'ach', 'tooth'); });
+  G.on('ventureReady', () => ui.toast('📈 An investment at the Goblin Venture Bank is ready! See if it worked.', 'good', 'bag'));
   G.on('digSpawn', () => ui.toast('✨ Something shiny is buried on Hoard Hill! Tap the X to dig.', 'good', 'chest'));
   G.on('trackUnlocked', (id) => { sfx('achieve'); ui.toast(`🎵 New track at the DJ Stand: ${TRACKS[id].name}!`, 'ach', 'music'); });
   G.on('medicGems', (n) => ui.toast(`Your infirmary is fully staffed: a medic reward became ${n} gems!`, 'good', 'gem'));

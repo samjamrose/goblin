@@ -5,7 +5,7 @@ import {
   REGIONS, REGION_BY_ID, STAGES_PER_REGION, MISSIONS, TREASURES, TREASURE_SETS, RESEARCH, RESEARCH_BY_ID,
   PERKS, PERK_BY_ID, PRESTIGE_MIN_GOLD, teethFor, ITEM_WEAPONS, ITEM_TRINKETS, ITEM_ADJ, ITEM_OF, FUNNY_EVENTS,
   AMBIENT_EVENTS, DAILY_TEMPLATES, STORY, ACHIEVEMENTS, RIVAL_NAMES, LOGIN_REWARDS, ENEMIES,
-  MAP_W, MAP_H, ROADS, DECOR, DECOR_SIZE, HEAL_MS, MEDIC_NAMES, RECOVER_MS, TRACK_UNLOCKS,
+  MAP_W, MAP_H, ROADS, DECOR, DECOR_SIZE, HEAL_MS, MEDIC_NAMES, RECOVER_MS, TRACK_UNLOCKS, VENTURES, VENTURE_RISK,
 } from './data.js';
 import { rng, pick, ri, clamp, weighted, dayKey, weekKey, hashStr, fmt, shuffle } from './util.js';
 import { enemyTeam, resolveInstant } from './battlesim.js';
@@ -1170,45 +1170,59 @@ export const G = {
     this.emit('log', text);
   },
 
-  // ---- Lucky Rat Casino gambling. Winnings don't count as "earned" gold (no free teeth).
-  stakes() {
+  // ---- Goblin Venture Bank: invest real gold in silly goblin startups.
+  // Each pitch has a hidden chance of success; payouts don't count as "earned" gold (no free teeth).
+  ventureStakes() {
     const inc = Math.max(5, this.incomePerSec(false));
-    return [{ label: 'Small', v: Math.max(100, inc * 60) }, { label: 'Medium', v: Math.max(1000, inc * 600) }, { label: 'Big', v: Math.max(10000, inc * 3600) }];
+    return [{ label: 'Small', v: Math.max(100, inc * 600) }, { label: 'Medium', v: Math.max(1000, inc * 3600) }, { label: 'Big', v: Math.max(10000, inc * 4 * 3600) }];
   },
-  SLOT_SYMBOLS: [['coin', 30], ['shroom', 28], ['rat', 20], ['gem', 10], ['crown', 5], ['skull', 8]],
-  SLOT_PAY: { coin: 5, shroom: 5, rat: 8, gem: 20, crown: 60 },
-  placeBet(stake) {
-    if (!this.isBuilt('casino') || this.isConstructing('casino')) return false;
-    if (!(stake > 0) || !this.spend('gold', stake)) return false;
-    const st = this.s.stats; st.bets = (st.bets || 0) + 1;
-    return true;
+  ventureSlots() { return 3; },
+  makeOffer() {
+    const s = this.s, used = new Set([...(s.ventures?.offers || []), ...(s.ventures?.active || [])].map(o => o.id));
+    const pool = VENTURES.filter(v => !used.has(v.id));
+    const v = pick(pool.length ? pool : VENTURES), R = VENTURE_RISK[v.risk];
+    const [founder] = this.pickNames(1);
+    // hidden odds wobble a little per pitch so no two are exactly alike
+    return { id: v.id, founder, p: clamp(R.p + (Math.random() - 0.5) * 0.16, 0.05, 0.92), mult: R.mult, mins: R.mins };
   },
-  payBet(stake, mult) {
-    const win = stake * mult, st = this.s.stats;
-    if (win > 0) { this.addGold(win, false); }
-    if (mult > 1) { st.betWins = (st.betWins || 0) + 1; st.bestWin = Math.max(st.bestWin || 0, win - stake); }
-    return win;
-  },
-  playSlots(stake) {
-    if (!this.placeBet(stake)) return null;
-    const reels = [0, 1, 2].map(() => weighted(this.SLOT_SYMBOLS));
-    let mult = 0;
-    if (!reels.includes('skull')) {
-      if (reels[0] === reels[1] && reels[1] === reels[2]) mult = this.SLOT_PAY[reels[0]];
-      else if (reels[0] === reels[1] || reels[1] === reels[2] || reels[0] === reels[2]) mult = 1.4;
+  refreshVentures(force) {
+    const s = this.s, now = this.now();
+    s.ventures = s.ventures || { offers: [], active: [], refresh: 0 };
+    if (force || now > s.ventures.refresh || s.ventures.offers.length < 4) {
+      if (force || now > s.ventures.refresh) s.ventures.offers = [];
+      while (s.ventures.offers.length < 4) s.ventures.offers.push(this.makeOffer());
+      if (force || now > s.ventures.refresh) s.ventures.refresh = now + 30 * 60e3;
     }
-    return { reels, mult, win: this.payBet(stake, mult), stake };
   },
-  playRace(stake, pickIdx) {
-    if (!this.placeBet(stake)) return null;
-    const winner = Math.floor(Math.random() * 4), mult = winner === pickIdx ? 3.7 : 0;
-    return { winner, pick: pickIdx, mult, win: this.payBet(stake, mult), stake };
+  invest(offerIdx, stakeIdx) {
+    const s = this.s;
+    if (!this.isBuilt('casino') || this.isConstructing('casino')) return null;
+    this.refreshVentures();
+    const V = s.ventures, o = V.offers[offerIdx];
+    if (!o || V.active.length >= this.ventureSlots()) return null;
+    const stake = Math.floor(this.ventureStakes()[stakeIdx]?.v || 0);
+    if (!(stake > 0) || !this.spend('gold', stake)) return null;
+    const now = this.now();
+    const inv = { ...o, uid: s.nextUid++, stake, start: now, end: now + o.mins * 60e3 };
+    V.active.push(inv);
+    V.offers.splice(offerIdx, 1, this.makeOffer());
+    s.stats.ventures = (s.stats.ventures || 0) + 1;
+    this.emit('invested', inv);
+    return inv;
   },
-  playFlip(stake, side) {
-    if (!this.placeBet(stake)) return null;
-    const result = Math.random() < 0.5 ? 'heads' : 'tails', mult = result === side ? 1.9 : 0;
-    return { result, side, mult, win: this.payBet(stake, mult), stake };
+  collectVenture(uid) {
+    const s = this.s, V = s.ventures; if (!V) return null;
+    const inv = V.active.find(x => x.uid === uid);
+    if (!inv || this.now() < inv.end) return null;
+    V.active = V.active.filter(x => x !== inv);
+    const def = VENTURES.find(v => v.id === inv.id);
+    const ok = Math.random() < inv.p;
+    const payout = ok ? Math.floor(inv.stake * inv.mult) : 0;
+    if (payout) this.addGold(payout, false);
+    if (ok) { s.stats.ventureWins = (s.stats.ventureWins || 0) + 1; s.stats.bestWin = Math.max(s.stats.bestWin || 0, payout - inv.stake); }
+    return { ok, payout, inv, def, text: ok ? def.win : def.lose };
   },
+
 
   // Hoard Hill: dig up a buried treasure
   digHoard() {
@@ -1595,6 +1609,7 @@ export const G = {
     if (this.rt.invasion && !this.rt.invasion.fighting && now > this.rt.invasion.until) this.autoDefend();
 
     if (this.injured().length) this.processHealing(now);
+    if (s.ventures) for (const v of s.ventures.active) if (!v.notified && now >= v.end) { v.notified = true; this.emit('ventureReady', v); }
     // expeditions done notification
     for (const e of s.expeditions) if (!e.claimed && !e.notified && now >= e.end) { e.notified = true; this.emit('expDone', e); }
 

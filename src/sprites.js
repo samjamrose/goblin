@@ -594,7 +594,10 @@ const BUILD_DRAW = {
     // lights
     for (let i = x + 1; i < x + w - 1; i += 2) p.px(i, y + 2, i % 4 === 1 ? '#ffe060' : '#ff6a8a');
     // giant dice sign
-    p.rect(W / 2 - 4, y + 4, 8, 8, '#fff'); p.px(W / 2 - 2, y + 6, '#222'); p.px(W / 2 + 1, y + 9, '#222'); p.px(W / 2 - 1, y + 8, '#222');
+    // stock chart board with a rising line
+    p.rect(W / 2 - 6, y + 3, 12, 9, '#1c2a3a'); p.hline(W / 2 - 6, y + 3, 12, '#3a4a5a');
+    for (const [cx, cy] of [[-5, 10], [-4, 9], [-3, 9], [-2, 8], [-1, 9], [0, 7], [1, 6], [2, 7], [3, 5], [4, 4]]) p.px(W / 2 + cx, y + cy, '#5aff6a');
+    p.px(W / 2 + 4, y + 5, '#5aff6a'); p.px(W / 2 + 3, y + 4, '#5aff6a');
     p.door(W / 2 - 4, H - 16, 8, 8, '#6a1a2a');
     p.window(x + 4, H - 20, 4, 4, '#ffe060'); p.window(x + w - 8, H - 20, 4, 4, '#ffe060');
     // rat statue

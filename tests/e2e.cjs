@@ -241,27 +241,33 @@ const SHOTS = process.env.SHOTS || null;
   await shot('bazaar');
   await ev(() => window.__game.ui.closeSheet());
 
-  // ---- casino gambling
+  // ---- goblin venture bank: invest real gold, hidden odds
   await ev(() => { const G = window.__game.G; G.s.level = Math.max(G.s.level, 12); G.s.gold = 1e12; if (!G.isBuilt('casino')) { G.buy('casino'); G.s.buildings.casino.built = 0; } window.__game.ui.openTab('build'); window.__game.ui.show({ tab: 'building', param: 'casino' }, true); });
   await wait(300);
-  const bets0 = await ev(() => window.__game.G.s.stats.bets || 0);
-  await p.click('.sheet-body [data-act=gamble][data-g=slots]');
-  await wait(2200);
-  check(await ev((b0) => (window.__game.G.s.stats.bets || 0) === b0 + 1 && /WIN|Lost|even/.test(document.querySelector('#modal-box').innerText), bets0), 'slots spin and pay out');
-  await shot('slots');
-  await closeModals();
-  await p.click('.sheet-body [data-act=gamble][data-g=race]');
+  check(await p.locator('.sheet-body [data-act=venture-invest]').count() === 4, 'four startup pitches offered');
+  const vg0 = await ev(() => window.__game.G.s.gold);
+  await p.click('.sheet-body [data-act=venture-invest][data-i="0"]');
   await wait(200);
-  await p.click('#modal [data-act=race-pick][data-i="2"]');
-  await wait(3800);
-  check(await ev(() => /wins!/.test(document.querySelector('#modal-box').innerText)), 'rat race runs to a finish');
-  await shot('race');
+  check(await ev((g0) => window.__game.G.s.ventures.active.length === 1 && window.__game.G.s.gold < g0, vg0), 'investing takes real gold');
+  await shot('ventures');
+  // force success, fast-forward, collect
+  await ev(() => { const v = window.__game.G.s.ventures.active[0]; v.p = 1; v.end = window.__game.G.now() - 1; window.__game.ui.rerender(); });
+  await wait(400);
+  const vg1 = await ev(() => window.__game.G.s.gold);
+  await p.click('.sheet-body [data-act=venture-collect]');
+  await wait(300);
+  check(await ev((g1) => window.__game.G.s.gold > g1 && /IT WORKED/.test(document.querySelector('#modal-box').innerText), vg1), 'a successful investment pays out');
+  await shot('venture-result');
   await closeModals();
-  await p.click('.sheet-body [data-act=gamble][data-g=flip]');
+  // and a flop loses the gold
+  await p.click('.sheet-body [data-act=venture-invest][data-i="1"]');
   await wait(200);
-  await p.click('#modal [data-act=flip-pick][data-s=heads]');
-  await wait(1700);
-  check(await ev(() => /landed on/.test(document.querySelector('#modal-box').innerText)), 'coin flip resolves');
+  await ev(() => { const v = window.__game.G.s.ventures.active[0]; v.p = 0; v.end = window.__game.G.now() - 1; window.__game.ui.rerender(); });
+  await wait(400);
+  const vg2 = await ev(() => window.__game.G.s.gold);
+  await p.click('.sheet-body [data-act=venture-collect]');
+  await wait(300);
+  check(await ev((g2) => window.__game.G.s.gold < g2 + 1e9 && /FLOPPED/.test(document.querySelector('#modal-box').innerText), vg2), 'a flop loses the investment');
   await closeModals();
   await ev(() => window.__game.ui.closeSheet());
   // ---- hoard hill dig site

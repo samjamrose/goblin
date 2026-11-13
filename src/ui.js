@@ -2,7 +2,7 @@
 import {
   RARITIES, JOBS, TRAITS, BUILDINGS, BUILDING_BY_ID, BIZ, DISTRICTS, DISTRICT_BY_ID, REGIONS, REGION_BY_ID, STAGES_PER_REGION,
   MISSIONS, TREASURES, TREASURE_SETS, RESEARCH, PERKS, NAMED, NAMED_BY_ID, ABILITY_TEXT, DAILY_TEMPLATES, STORY, ACHIEVEMENTS,
-  LOGIN_REWARDS, PRESTIGE_MIN_GOLD, teethFor, xpForLevel, ENEMIES, MILESTONES, RANKS, TILE, TRACK_UNLOCKS,
+  LOGIN_REWARDS, PRESTIGE_MIN_GOLD, teethFor, VENTURES, xpForLevel, ENEMIES, MILESTONES, RANKS, TILE, TRACK_UNLOCKS,
 } from './data.js';
 import { fmt, fmtTime, clamp, pct } from './util.js';
 import { winMargin } from './battlesim.js';
@@ -362,77 +362,33 @@ export class UI {
     h += `<p class="small muted">Battles have their own music, and bosses get something even louder.</p>`;
     return h;
   }
-  // ---- Lucky Rat Casino: slots, rat race, coin flip
+  // ---- Goblin Venture Bank: invest in silly goblin startups (hidden odds)
   casinoHtml() {
-    const G = this.G, st = G.s.stats, idx = this.stakeIdx || 0;
-    let h = `<h3>🎰 Gamble</h3><div class="card row" style="background:linear-gradient(#5a1a2a,#2a0a14)"><img src="${goblinPortrait({ skin: '#7dcc52', hat: 'visor', outfit: '#2a6a3a', tool: 'dice', ears: 1, nose: 2, eyes: 1, teeth: 2 }, 2)}" style="width:48px"><div class="grow small"><b>Dicey the Dealer</b><br><i>"The house always wins. Usually. Sometimes. Feeling lucky?"</i></div></div>`;
-    h += `<div class="small muted">Your bet:</div><div class="amt">${G.stakes().map((k, i) => `<button class="${i === idx ? 'on' : ''}" data-act="stake" data-i="${i}" ${this.b(el => { const v = G.stakes()[i].v; el.innerHTML = `${k.label}<br><small>${fmt(v)}</small>`; el.classList.toggle('no', G.s.gold < v); })}></button>`).join('')}</div>`;
-    h += `<div class="list-item"><img src="${icon('dice')}" class="ic b"><div class="grow small"><b>Goblin Slots</b><br>3 matching: up to ×60 (👑). Any pair: ×1.4. A 💀 loses.</div><button class="btn small purple" data-act="gamble" data-g="slots">Spin</button></div>`;
-    h += `<div class="list-item"><img src="${icon('rat')}" class="ic b"><div class="grow small"><b>Rat Race</b><br>Pick 1 of 4 rats. Winner pays ×3.7.</div><button class="btn small purple" data-act="gamble" data-g="race">Bet</button></div>`;
-    h += `<div class="list-item"><img src="${icon('coin')}" class="ic b"><div class="grow small"><b>Coin Flip</b><br>Call it. Right pays ×1.9.</div><button class="btn small purple" data-act="gamble" data-g="flip">Flip</button></div>`;
-    h += `<p class="small muted">Bets played: ${st.bets || 0} · Wins: ${st.betWins || 0}${st.bestWin ? ' · Best win: ' + fmt(st.bestWin) : ''}. Winnings don't count toward Golden Teeth.</p>`;
+    const G = this.G, st = G.s.stats, idx = this.stakeIdx ?? 0;
+    G.refreshVentures();
+    const V = G.s.ventures;
+    let h = `<h3>📈 Goblin Ventures</h3><div class="card row" style="background:linear-gradient(#2a3a6a,#141c3a)"><img src="${goblinPortrait({ skin: '#7dcc52', hat: 'tophat', outfit: '#2a2a5a', tool: 'bag', ears: 1, nose: 3, eyes: 0, teeth: 2, extra: 'monocle' }, 2)}" style="width:48px"><div class="grow small"><b>Banker Grizzlecoin</b><br><i>"Goblins bring me genius ideas. Some are actually genius! Invest, and pray."</i></div></div>`;
+    // active investments
+    h += `<div class="small muted" style="margin-top:6px">Your investments (${V.active.length}/${G.ventureSlots()})</div>`;
+    if (!V.active.length) h += `<p class="small muted">Nothing invested yet. Pick a pitch below!</p>`;
+    for (const inv of V.active) {
+      const def = VENTURES.find(v => v.id === inv.id);
+      h += `<div class="card" style="margin-bottom:6px"><div class="row"><div class="grow small"><b>${def.name}</b><br><span class="muted">${esc(inv.founder)}'s idea · ${fmt(inv.stake)} invested · could pay ×${inv.mult}</span></div>
+        <span ${this.b(el => { const left = (inv.end - G.now()) / 1000; el.innerHTML = left > 0 ? `<b class="small">${fmtTime(left)}</b>` : `<button class="btn small gold" data-act="venture-collect" data-id="${inv.uid}">See result!</button>`; })}></span></div>
+        <div class="pb b"><i ${this.b(el => el.style.width = clamp((G.now() - inv.start) / (inv.end - inv.start) * 100, 0, 100) + '%')}></i></div></div>`;
+    }
+    // stake + pitches
+    h += `<div class="small muted" style="margin-top:8px">Invest how much (real gold)?</div><div class="amt">${G.ventureStakes().map((k, i) => `<button class="${i === idx ? 'on' : ''}" data-act="stake" data-i="${i}" ${this.b(el => { const v = G.ventureStakes()[i].v; el.innerHTML = `${k.label}<br><small>${fmt(v)}</small>`; el.classList.toggle('no', G.s.gold < v); })}></button>`).join('')}</div>`;
+    h += `<div class="small muted">Today's pitches <span ${this.b(el => el.textContent = '· new pitches in ' + fmtTime((G.s.ventures.refresh - G.now()) / 1000))}></span></div>`;
+    V.offers.forEach((o, i) => {
+      const def = VENTURES.find(v => v.id === o.id);
+      h += `<div class="list-item" style="align-items:flex-start"><div class="grow small"><b>${def.name}</b> <span class="tag">${'🔥'.repeat(def.risk)}</span><br><i>"${def.pitch}"</i> <span class="muted">— ${esc(o.founder)}</span><br>Pays <b class="green-t">×${o.mult}</b> if it works · ready in ${o.mins} min</div>
+        <button class="btn small purple" data-act="venture-invest" data-i="${i}" ${this.b(el => el.classList.toggle('no', G.s.gold < G.ventureStakes()[this.stakeIdx ?? 0].v || G.s.ventures.active.length >= G.ventureSlots()))}>Invest</button></div>`;
+    });
+    h += `<p class="small muted">More 🔥 = riskier, but pays more. Nobody knows the real odds, not even the founder. Investments: ${st.ventures || 0} · Hits: ${st.ventureWins || 0}${st.bestWin ? ' · Best profit: ' + fmt(st.bestWin) : ''}. Payouts don't count toward Golden Teeth.</p>`;
     return h;
   }
-  gambleModal(game) {
-    const G = this.G, stake = G.stakes()[this.stakeIdx || 0].v;
-    if (G.s.gold < stake) { sfx('error'); this.toast('Not enough gold for that bet!', 'bad', 'coin'); return; }
-    const again = `<button class="btn purple" data-act="gamble" data-g="${game}">Play again (${fmt(stake)})</button><button class="btn ghost" data-act="close-modal">Done</button>`;
-    const result = (r, html) => {
-      const won = r.mult > 1, even = r.mult === 1;
-      sfx(won ? (r.mult >= 8 ? 'epic' : 'victory') : 'defeat');
-      if (won) this.flyCoins(innerWidth / 2, innerHeight / 2, Math.min(16, 4 + Math.round(r.mult)));
-      return `${html}<h2 class="${won ? 'green-t' : 'red-t'}" style="margin-top:8px">${won ? `YOU WIN ${fmt(r.win)}!` : even ? 'Broke even' : `Lost ${fmt(r.stake)}`}</h2><div class="modal-actions">${again}</div>`;
-    };
-    if (game === 'slots') {
-      const r = G.playSlots(stake); if (!r) return;
-      const syms = G.SLOT_SYMBOLS.map(x => x[0]);
-      const box = (i, sym) => `<span class="reel" id="reel${i}"><img src="${icon(sym, 4)}"></span>`;
-      this.modal(`<h2>Goblin Slots</h2><div class="reels">${[0, 1, 2].map(i => box(i, syms[i])).join('')}</div><div id="slot-res"><p class="small muted">Spinning...</p></div>`, { dark: true, dismissable: false });
-      let ticks = 0; sfx('recruit');
-      const iv = setInterval(() => {
-        ticks++;
-        for (let i = 0; i < 3; i++) { if (ticks > 8 + i * 5) continue; const el = document.getElementById('reel' + i); if (el) el.innerHTML = `<img src="${icon(syms[(ticks + i * 2) % syms.length], 4)}">`; }
-        for (let i = 0; i < 3; i++) if (ticks === 9 + i * 5) { const el = document.getElementById('reel' + i); if (el) { el.innerHTML = `<img src="${icon(r.reels[i], 4)}">`; el.classList.add('stop'); } sfx('tap'); }
-        if (ticks >= 20) { clearInterval(iv); const el = document.getElementById('slot-res'); if (el) el.innerHTML = result(r, ''); this.modalDismissable = true; this.refresh(); }
-      }, 80);
-    } else if (game === 'race') {
-      const cols = ['#ff6a6a', '#6ab0ff', '#7aff6a', '#ffd040'], names = ['Squeaky', 'Nibbles', 'Turbo', 'Sir Whiskers'];
-      this.modal(`<h2>Rat Race</h2><p class="small">Pick your rat! Bet: <b>${fmt(stake)}</b> · Pays ×3.7</p><div class="ev-choices">${names.map((n, i) => `<button class="btn" style="background:${cols[i]};color:#1c1424;text-shadow:none" data-act="race-pick" data-i="${i}">🐀 ${n}</button>`).join('')}</div><div class="modal-actions"><button class="btn ghost" data-act="close-modal">Cancel</button></div>`, { dark: true });
-      this.racePick = (pick) => {
-        const r = G.playRace(stake, pick); if (!r) return;
-        this.modal(`<h2>Rat Race</h2><canvas id="race" width="240" height="120" style="width:100%;image-rendering:pixelated;border-radius:8px;background:#5a8a3a"></canvas><div id="race-res"><p class="small muted">You picked ${names[pick]}!</p></div>`, { dark: true, dismissable: false });
-        const cv = document.getElementById('race'), ctx = cv.getContext('2d'); const t0 = performance.now(), dur = 3200;
-        // each rat gets a wobbly pace; the predetermined winner crosses first
-        const seeds = [0, 1, 2, 3].map(() => Math.random() * 6);
-        const pos = (i, k) => { const base = i === r.winner ? k : k * (0.86 + 0.08 * ((i * 7 + 3) % 4) / 3); return Math.min(1, base + Math.sin(k * 9 + seeds[i]) * 0.04 * (1 - k)); };
-        sfx('battle');
-        const frame = () => {
-          const k = Math.min(1, (performance.now() - t0) / dur);
-          ctx.fillStyle = '#5a8a3a'; ctx.fillRect(0, 0, 240, 120);
-          for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#7a6a3a' : '#8a7a4a'; ctx.fillRect(0, 10 + i * 26, 240, 22); }
-          ctx.fillStyle = '#fff'; for (let y = 10; y < 114; y += 6) ctx.fillRect(216, y, 3, 3);
-          for (let i = 0; i < 4; i++) {
-            const x = 10 + pos(i, k) * 200, y = 26 + i * 26, leg = Math.floor(performance.now() / 60) % 2;
-            ctx.fillStyle = '#1c1424'; ctx.fillRect(x - 6, y - 7, 13, 7); ctx.fillStyle = '#8a8a8a'; ctx.fillRect(x - 5, y - 6, 11, 5); ctx.fillRect(x + 5, y - 7, 3, 3);
-            ctx.fillStyle = '#ffb0b0'; ctx.fillRect(x - 10, y - 4, 5, 1); ctx.fillRect(x + 8, y - 5, 1, 1);
-            ctx.fillStyle = cols[i]; ctx.fillRect(x - 2, y - 9, 5, 3);
-            ctx.fillStyle = '#5a5a5a'; ctx.fillRect(x - 3 + leg, y - 1, 1, 1); ctx.fillRect(x + 3 - leg, y - 1, 1, 1);
-          }
-          if (k < 1) requestAnimationFrame(frame);
-          else { const el = document.getElementById('race-res'); if (el) el.innerHTML = result(r, `<p>${names[r.winner]} wins!</p>`); this.modalDismissable = true; this.refresh(); }
-        };
-        frame();
-      };
-    } else {
-      this.modal(`<h2>Coin Flip</h2><p class="small">Bet: <b>${fmt(stake)}</b> · Pays ×1.9</p><div class="row" style="justify-content:center"><button class="btn gold" data-act="flip-pick" data-s="heads">Heads</button><button class="btn" data-act="flip-pick" data-s="tails">Tails</button></div><div class="modal-actions"><button class="btn ghost" data-act="close-modal">Cancel</button></div>`, { dark: true });
-      this.flipPick = (side) => {
-        const r = G.playFlip(stake, side); if (!r) return;
-        this.modal(`<h2>Coin Flip</h2><div class="flipcoin"><img src="${icon('coin', 8)}"></div><div id="flip-res"><p class="small muted">You called ${side}...</p></div>`, { dark: true, dismissable: false });
-        sfx('throw');
-        setTimeout(() => { const el = document.getElementById('flip-res'); if (el) el.innerHTML = result(r, `<p>It landed on <b>${r.result.toUpperCase()}</b>!</p>`); this.modalDismissable = true; this.refresh(); }, 1300);
-      };
-    }
-  }
+
   bazaarHtml() {
     const G = this.G;
     const pretty = (o) => Object.entries(o).map(([k, v]) => `${iconImg(RES_ICON[k])} ${fmt(v)}`).join(' ');
@@ -1405,9 +1361,23 @@ UI.prototype.acts = {
     if (r) { sfx('golden'); this.toast(`Time warp! +${fmt(r.gold)} gold`, 'good', 'hourglass'); this.flyCoins(innerWidth / 2, innerHeight / 2, 12); this.rerender(); } else sfx('error');
   },
   'stake'(el) { this.stakeIdx = +el.dataset.i; this.rerender(); },
-  'gamble'(el) { this.gambleModal(el.dataset.g); },
-  'race-pick'(el) { this.racePick && this.racePick(+el.dataset.i); },
-  'flip-pick'(el) { this.flipPick && this.flipPick(el.dataset.s); },
+  'venture-invest'(el) {
+    const G = this.G, inv = G.invest(+el.dataset.i, this.stakeIdx ?? 0);
+    if (!inv) { sfx('error'); this.toast(G.s.ventures.active.length >= G.ventureSlots() ? 'You can only have 3 investments at once!' : 'Not enough gold!', 'bad', 'coin'); return; }
+    sfx('coin');
+    const def = VENTURES.find(v => v.id === inv.id);
+    this.toast(`Invested ${fmt(inv.stake)} in ${def.name}! Result in ${inv.mins} min.`, 'good', 'bag');
+    this.rerender();
+  },
+  'venture-collect'(el) {
+    const r = this.G.collectVenture(+el.dataset.id); if (!r) return;
+    sfx(r.ok ? (r.inv.mult >= 3.6 ? 'epic' : 'victory') : 'defeat');
+    if (r.ok) this.flyCoins(innerWidth / 2, innerHeight / 2, 12);
+    this.modal(`<div class="small muted">${esc(r.inv.founder)}'s ${r.def.name}</div><h2 class="${r.ok ? 'green-t' : 'red-t'}">${r.ok ? '📈 IT WORKED!' : '📉 IT FLOPPED!'}</h2><p>${esc(r.text)}</p>
+      <div class="loot">${r.ok ? `<span>${iconImg('coin')} +${fmt(r.payout)}</span><span>Profit ${fmt(r.payout - r.inv.stake)}</span>` : `<span>Lost ${fmt(r.inv.stake)}</span>`}</div>
+      <div class="modal-actions"><button class="btn gold" data-act="close-modal">${r.ok ? 'Cha-ching!' : 'Ouch.'}</button></div>`, { dark: true, onClose: () => this.rerender() });
+  },
+
   'exchange'(el) {
     const G = this.G, k = el.dataset.k, q = G.exchange(k);
     const pretty = (o) => Object.entries(o).map(([r, v]) => `${fmt(v)} ${r === 'mushrooms' ? 'mushrooms' : r}`).join(', ');

@@ -1,6 +1,6 @@
 // Offline support for the installed Goblinsburg web app.
 // Network first (so updates arrive right away), falling back to the cached copy when offline.
-const CACHE = 'goblinsburg-v4';
+const CACHE = 'goblinsburg-v5';
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png',
   'src/style.css', 'src/main.js', 'src/game.js', 'src/data.js', 'src/util.js', 'src/battlesim.js',
