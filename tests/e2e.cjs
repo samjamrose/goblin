@@ -28,10 +28,78 @@ const SHOTS = process.env.SHOTS || null;
   await wait(300);
   check(await ev(() => window.__game.G.s.name) === 'Testopolis', 'capital named');
 
-  // ---- build mushroom patch by tapping the plot on the map
   const tapWorld = async (wx, wy) => { const [sx, sy] = await ev(([x, y]) => window.__game.world.toScreen(x, y), [wx, wy]); await p.mouse.click(sx, sy); };
+  // ---- the Deep Mines: gold is dug underground
+  check(await ev(() => window.__game.G.s.mine.lv[0]) === 1, 'new player starts with the Muddy Dig');
+  check(await ev(() => window.__game.G.incomePerSec(false)) > 0, 'gold comes from the mines from the start');
+  check(await p.isVisible('#side [data-key=mines]'), 'Mines side button in town');
+  await p.click('#side [data-key=mines]');
+  await wait(2300);
+  check(await ev(() => window.__game.world.inMine()), 'boat ride arrives in the mines');
+  check(await ev(() => window.__game.G.s.stats.mineTrips) === 1, 'mine trip counted');
+  await shot('mine-start');
+  await p.click('#st-btn');
+  await wait(200);
+  check(await ev(() => window.__game.G.s.story) === 1, 'story: take the boat claimed');
+  // tap the Muddy Dig band to open its panel and upgrade it
+  await ev(() => { window.__game.G.s.gold = 500; });
+  await ev(() => window.__game.world.focusDepth(0));
+  await wait(600);
+  await tapWorld(200, 112 + 50);
+  await wait(300);
+  check(await p.isVisible('#sheet.open') && await ev(() => window.__game.ui.view.tab) === 'depth', 'tapping a depth opens its panel');
+  await p.click('[data-act=buy-depth][data-fixed="10"]');
+  await wait(200);
+  check(await ev(() => window.__game.G.s.mine.lv[0]) === 11, 'depth upgraded ×10 with gold');
+  check(await ev(() => window.__game.G.depthStage(0)) === 3, 'tunnel expanded with new structures');
+  await p.click('.sheet-head > .ibtn.close');
+  await p.click('#st-btn');
+  await wait(200);
+  check(await ev(() => window.__game.G.s.story) === 2, 'story: muddy dig lv5 claimed');
+  // coin bubbles float in the mines
+  await ev(() => { const G = window.__game.G; G.s.timers.bubble = 0; });
+  await wait(400);
+  const bubbles = await ev(() => window.__game.G.rt.bubbles.length);
+  check(bubbles > 0, 'bubble spawned');
+  if (bubbles) {
+    const pos = await ev(() => { const w = window.__game.world, b = window.__game.G.rt.bubbles[0]; const [x, y] = w.bubblePos(b); w.focus(x, y, false, true); return w.toScreen(...w.bubblePos(b)); });
+    await p.mouse.click(pos[0], pos[1]);
+    await wait(200);
+    check(await ev(() => window.__game.G.s.stats.bubbles) >= 1, 'bubble popped by tap in the mines');
+  }
+  // dig deeper to the Copper Vein
+  check(await ev(() => window.__game.G.depthLock(1)) === null, 'copper vein unlocked after Muddy Dig Lv 10');
+  await ev(() => { window.__game.G.s.gold = 1e4; window.__game.world.focusDepth(1); });
+  await wait(600);
+  await tapWorld(200, 112 + 84 + 50);
+  await wait(300);
+  await p.click('.sheet-body [data-act=dig]');
+  await wait(400);
+  check(await ev(() => window.__game.G.depthOpen(1)), 'dug down to the Copper Vein');
+  await tab('build', 'mines');
+  await wait(150);
+  check(await p.isVisible('[data-act=buy-depth][data-i="1"]'), 'Build → Mines lists depths');
+  await p.click('[data-act=buy-depth][data-i="1"]');
+  await wait(100);
+  check(await ev(() => window.__game.G.s.mine.lv[1]) === 2, 'depth bought from Mines list');
+  await shot('mine-list');
+  await p.click('.sheet-head > .ibtn.close');
+  // boat back to town
+  await p.click('#side [data-key=town]');
+  await wait(2300);
+  check(await ev(() => !window.__game.world.inMine()), 'boat ride back to town');
+  // the dock on the map also sails to the mines
+  await ev(() => window.__game.world.focus(31 * 16, 37 * 16, false));
+  await wait(200);
+  await tapWorld(30.5 * 16, 37.5 * 16);
+  await wait(2300);
+  check(await ev(() => window.__game.world.inMine()), 'tapping the dock sails to the mines');
+  await ev(() => window.__game.world.switchScene('town'));
+  await wait(200);
+
+  // ---- build mushroom patch (it powers the Muddy Dig)
   check(await p.isVisible('#b-build.dot'), 'red dot on Build when something new can be built');
-  await p.click('#nav button[data-tab=build]');
+  await tab('build', 'biz');
   await wait(200);
   await p.click('.card[data-id=shroom]');
   await wait(300);
@@ -44,17 +112,19 @@ const SHOTS = process.env.SHOTS || null;
   check(await ev(() => !window.__game.world.placeValid()), 'road spot is rejected');
   await ev(() => { const w = window.__game.world, G = window.__game.G; const sp = G.findSpot('shroom', 19, 14); w.placing.tx = sp.tx; w.placing.ty = sp.ty; w.hooks.onPlaceMove(); });
   check(await ev(() => window.__game.world.placeValid()), 'free spot is accepted');
+  const inc0 = await ev(() => window.__game.G.depthIncome(0));
   await p.click('#pl-ok');
   await wait(3300);
   check(await ev(() => window.__game.G.isBuilt('shroom') && !window.__game.G.isConstructing('shroom')), 'shroom built');
+  check(await ev((v) => window.__game.G.depthIncome(0) > v, inc0), 'town business boosts its mine depth');
   // story claim
   await p.click('#st-btn');
   await wait(200);
-  check(await ev(() => window.__game.G.s.story) === 1, 'story quest 1 claimed');
+  check(await ev(() => window.__game.G.s.story) === 3, 'story quest build shroom claimed');
 
   // ---- buy loop through the build tab
   await ev(() => { window.__game.G.s.gold = 2e4; });
-  await tab('build');
+  await tab('build', 'biz');
   await wait(200);
   for (const a of ['10', '100', 'max', '1']) { await p.click(`.amt button[data-v="${a}"]`); await wait(80); }
   await p.click('[data-act=buy][data-id=shroom]');
@@ -64,21 +134,9 @@ const SHOTS = process.env.SHOTS || null;
   await wait(2800);
   check(await ev(() => window.__game.G.s.buildings.mine.lvl) >= 1, 'mine built from list');
   await tab('build');
-  for (const sub of ['util', 'research', 'districts', 'biz']) { await p.click(`.stab[data-sub=${sub}]`); await wait(120); }
+  for (const sub of ['util', 'research', 'districts', 'mines', 'biz']) { await p.click(`.stab[data-sub=${sub}]`); await wait(120); }
   await shot('build');
-
-  // ---- coin bubbles
-  await ev(() => { const G = window.__game.G; G.s.timers.bubble = 0; });
-  await p.click('.ibtn.close');
-  await wait(400);
-  const bubbles = await ev(() => window.__game.G.rt.bubbles.length);
-  check(bubbles > 0, 'bubble spawned');
-  if (bubbles) {
-    const pos = await ev(() => { const w = window.__game.world, b = window.__game.G.rt.bubbles[0]; const [x, y] = w.bubblePos(b); w.focus(x, y, false); return w.toScreen(...w.bubblePos(b)); });
-    await p.mouse.click(pos[0], pos[1]);
-    await wait(200);
-    check(await ev(() => window.__game.G.s.stats.bubbles) >= 1, 'bubble popped by tap');
-  }
+  await p.click('.sheet-head > .ibtn.close');
 
   // ---- recruit + assign
   await ev(() => { window.__game.G.s.mushrooms = 1e4; window.__game.G.s.gems = 1000; });
@@ -484,9 +542,11 @@ const SHOTS = process.env.SHOTS || null;
     q.on('pageerror', e => errs.push('PAGEERR(migrate) ' + e.message));
     await q.goto(URL);
     await q.waitForTimeout(1500);
-    const st = await q.evaluate(() => { const s = window.__game.G.s; return { name: s.name, lvl: s.level, gems: s.gems, gob: s.goblins.length, mine: s.buildings.mine.lvl, story: s.story, gold: s.gold, woods: s.regions.woods.stage }; });
+    const st = await q.evaluate(() => { const s = window.__game.G.s; return { name: s.name, lvl: s.level, gems: s.gems, gob: s.goblins.length, mine: s.buildings.mine.lvl, story: s.story, depth1: s.mine.lv[1], storyText: window.__game.G.storyQuest()?.text, news: !!document.querySelector('#modal.open') && document.querySelector('#modal-box').textContent.includes('Deep Mines'), gold: s.gold, woods: s.regions.woods.stage }; });
     check(st.name === 'MyOldCapital' && st.lvl === 9 && st.gob === 7 && st.mine === 40 && st.woods === 4, 'old save progress kept ' + JSON.stringify(st));
-    check(st.story === 17, 'story index migrated');
+    check(st.story === 22 && st.storyText === 'Build the Tinker Shed', 'story index migrated ' + st.story + ' ' + st.storyText);
+    check(st.depth1 === 40, 'mine depths start at the old business levels');
+    check(st.news, 'returning players see the Deep Mines news');
     check(st.gold >= 123456, 'gold kept (plus offline earnings)');
     await q.screenshot({ path: (SHOTS || '/tmp') + '/e2e-migrated.png' });
     await ctx2.close();

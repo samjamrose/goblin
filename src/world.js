@@ -1,7 +1,8 @@
 // The capital map: terrain, buildings, wandering goblins, effects, camera & input.
-import { TILE, MAP_W, MAP_H, BUILDINGS, BUILDING_BY_ID, DISTRICTS, DECOR, DECOR_SIZE, ROADS, PERSONALITY_LINES, JOB_LINES, GENERIC_LINES, BIZ } from './data.js';
+import { TILE, MAP_W, MAP_H, BUILDINGS, BUILDING_BY_ID, DISTRICTS, DECOR, DECOR_SIZE, ROADS, PERSONALITY_LINES, JOB_LINES, GENERIC_LINES, BIZ, DEPTHS, MINE_ITEM_NAMES } from './data.js';
 import { goblinSheet, GOB_W, GOB_H, buildingSprite, scaffoldSprite, plotSprite, B_EXTRA, makeCanvas, iconCanvas, shade, enemySprite } from './sprites.js';
 import { rng, pick, clamp, fmt, hashStr } from './util.js';
+import { MineMixin, MW, depthY } from './mines.js';
 
 const WW = MAP_W * TILE, WH = MAP_H * TILE;
 const FONT = '"Pixelify Sans", "Trebuchet MS", sans-serif';
@@ -28,6 +29,7 @@ export class World {
     this.terrainDirty = true;
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.dayLen = 480;
+    this.mineInit();
     this.buildGrid();
     this.resize();
     this.bindInput();
@@ -330,11 +332,13 @@ export class World {
     this.sw = r.width; this.sh = r.height;
     this.cv.width = Math.round(r.width * this.dpr);
     this.cv.height = Math.round(r.height * this.dpr);
+    if (this.scene === 'mine') { this.resizeMine(); this.clampCam(); return; }
     if (!this.zoomSet) { this.cam.zoom = clamp(this.sw / (15 * TILE), 1.7, 3.4); this.zoomSet = true; }
     this.minZoom = Math.max(1.0, this.sw / WW * 1.02);
     this.clampCam();
   }
   clampCam() {
+    if (this.scene === 'mine') return this.clampMineCam();
     const z = this.cam.zoom = clamp(this.cam.zoom, this.minZoom || 1.2, 5);
     const hw = this.sw / z / 2, hh = this.sh / z / 2;
     this.cam.x = clamp(this.cam.x, hw - 8, WW - hw + 8);
@@ -346,7 +350,7 @@ export class World {
   }
   toScreen(wx, wy) { return [(wx - this.cam.x) * this.cam.zoom + this.sw / 2, (wy - this.cam.y) * this.cam.zoom + this.sh / 2]; }
   toWorld(sx, sy) { return [(sx - this.sw / 2) / this.cam.zoom + this.cam.x, (sy - this.sh / 2) / this.cam.zoom + this.cam.y]; }
-  focus(wx, wy, smooth = true) { this.camTarget = smooth ? { x: wx, y: wy } : null; if (!smooth) { this.cam.x = wx; this.cam.y = wy; this.clampCam(); } }
+  focus(wx, wy, smooth = true, force = false) { if (this.scene === 'mine' && !force) return; this.camTarget = smooth ? { x: wx, y: wy } : null; if (!smooth) { this.cam.x = wx; this.cam.y = wy; this.clampCam(); } }
   focusBuilding(id) { const b = this.G.pos(id); this.focus((b.tx + b.w / 2) * TILE, (b.ty + b.h / 2) * TILE + 10); }
   viewRect() { const [x0, y0] = this.toWorld(0, 0), [x1, y1] = this.toWorld(this.sw, this.sh); return { x0, y0, x1, y1 }; }
   // visible area not covered by the HUD (top) and nav/ticker (bottom)
@@ -422,6 +426,8 @@ export class World {
 
   // ------------------------------------------------------------ tap handling
   tap(sx, sy) {
+    if (this.trip) return;
+    if (this.scene === 'mine') return this.tapMine(sx, sy);
     const [wx, wy] = this.toWorld(sx, sy);
     const G = this.G;
     if (this.placing) {
@@ -445,17 +451,7 @@ export class World {
       this.golden = null;
       return;
     }
-    // bubbles
-    for (const b of G.rt.bubbles) {
-      const [bx, by] = this.bubblePos(b);
-      if (Math.hypot(wx - bx, wy - by) < hitR + 4) {
-        const v = G.popBubble(b.id);
-        this.coinBurst(bx, by, 8, v);
-        this.hooks.sfx('pop');
-        this.hooks.haptic && this.hooks.haptic(8);
-        return;
-      }
-    }
+    // (coin bubbles live in the Deep Mines now)
     // hoard dig sites
     for (const dg of this.digs || []) {
       if (Math.hypot(wx - dg.x, wy - (dg.y - 3)) < hitR + 6) {
@@ -493,6 +489,9 @@ export class World {
         return;
       }
     }
+    // the boat dock to the mines (south of the bridge)
+    const dk = DECOR.find(x => x.type === 'dock');
+    if (dk && wx >= dk.tx * TILE - 4 && wx < (dk.tx + 5) * TILE && wy >= 35.3 * TILE && wy < (dk.ty + 2) * TILE) { this.hooks.sfx('tap'); this.hooks.onDock && this.hooks.onDock(); return; }
     // goblins
     let best = null, bd = 1e9;
     for (const a of this.agents.values()) {
@@ -649,6 +648,7 @@ export class World {
 
   // ------------------------------------------------------------ effects
   bubblePos(b) {
+    if (this.scene === 'mine') return this.mineBubblePos(b);
     const d = this.G.pos(b.bid);
     const t = this.time + (b.id * 10);
     return [(d.tx + d.w / 2) * TILE, d.ty * TILE - B_EXTRA + 4 + Math.sin(t * 2.5) * 2];
@@ -674,10 +674,32 @@ export class World {
   smoke(x, y, dark) { this.particles.push({ type: 'puff', x, y, vx: (Math.random() - 0.5) * 6, vy: -8 - Math.random() * 6, t: 0, life: 2 + Math.random(), color: dark ? '#4a4a4a' : '#c8c8c8', r: 1.5 + Math.random() * 1.5, grow: 1.5 }); }
   shake(t = 0.3) { this.shakeT = t; }
 
-  onBuild(id) { const b = this.G.pos(id); this.focusBuilding(id); this.puff((b.tx + b.w / 2) * TILE, (b.ty + b.h) * TILE - 6, '#c8a878', 16); }
-  onBuilt(id) { const b = this.G.pos(id); const x = (b.tx + b.w / 2) * TILE, y = (b.ty + b.h / 2) * TILE; this.confetti(x, y - 10, 50); this.puff(x, y + 10, '#d8c8a8', 20); this.flash[id] = 0.5; this.bounce[id] = 0.5; this.addFloat(x, y - 30, 'BUILT!', '#7aff6a', 1.8, 1.4); }
-  onUpgrade(id, n) { const b = this.G.pos(id); const x = (b.tx + b.w / 2) * TILE, y = b.ty * TILE; this.bounce[id] = 0.35; this.sparkle(x, y, 10, '#ffe060'); this.addFloat(x, y - 6, n > 1 ? `+${n} levels` : 'Level up!', '#ffe060', 1.1); }
-  onMilestone(id, lvl) { const b = this.G.pos(id); const x = (b.tx + b.w / 2) * TILE, y = b.ty * TILE; this.confetti(x, y, 70); this.flash[id] = 0.7; this.bounce[id] = 0.6; this.addFloat(x, y - 14, `LEVEL ${lvl}! INCOME ×2`, '#ff80ff', 2.4, 1.3); this.shake(0.25); }
+  onBuild(id) { if (this.scene === 'mine') return; const b = this.G.pos(id); this.focusBuilding(id); this.puff((b.tx + b.w / 2) * TILE, (b.ty + b.h) * TILE - 6, '#c8a878', 16); }
+  onBuilt(id) { if (this.scene === 'mine') return; const b = this.G.pos(id); const x = (b.tx + b.w / 2) * TILE, y = (b.ty + b.h / 2) * TILE; this.confetti(x, y - 10, 50); this.puff(x, y + 10, '#d8c8a8', 20); this.flash[id] = 0.5; this.bounce[id] = 0.5; this.addFloat(x, y - 30, 'BUILT!', '#7aff6a', 1.8, 1.4); }
+  onUpgrade(id, n) { if (this.scene === 'mine') return; const b = this.G.pos(id); const x = (b.tx + b.w / 2) * TILE, y = b.ty * TILE; this.bounce[id] = 0.35; this.sparkle(x, y, 10, '#ffe060'); this.addFloat(x, y - 6, n > 1 ? `+${n} levels` : 'Level up!', '#ffe060', 1.1); }
+  onMilestone(id, lvl) { if (this.scene === 'mine') return; const b = this.G.pos(id); const x = (b.tx + b.w / 2) * TILE, y = b.ty * TILE; this.confetti(x, y, 70); this.flash[id] = 0.7; this.bounce[id] = 0.6; this.addFloat(x, y - 14, `LEVEL ${lvl}! INCOME ×2`, '#ff80ff', 2.4, 1.3); this.shake(0.25); }
+
+  // pier + rowboat on the river: the way to the Deep Mines
+  drawDock(d) {
+    const ctx = this.ctx, x0 = d.tx * TILE, y0 = d.ty * TILE, t = this.time;
+    ctx.fillStyle = '#5a3a20'; for (const px of [2, 20, 38]) ctx.fillRect(x0 + px, 36 * TILE + 2, 3, 22);
+    ctx.fillStyle = '#8a6038'; ctx.fillRect(x0, 36 * TILE + 4, 3 * TILE, 10); ctx.fillRect(x0 + 4, y0, 3 * TILE - 8, 18);
+    ctx.fillStyle = '#6a4424'; for (let px = 0; px < 3 * TILE; px += 5) ctx.fillRect(x0 + px, 36 * TILE + 4, 1, 10);
+    this.drawBoat(ctx, x0 + 3 * TILE + 18, 36 * TILE + 10 + Math.sin(t * 2) * 1.2, 1, true);
+    // sign
+    ctx.fillStyle = '#5a3a20'; ctx.fillRect(x0 + 6, y0 + 4, 2, 14);
+    ctx.fillStyle = '#a07a3a'; ctx.fillRect(x0 - 2, y0 - 6, 22, 11); ctx.fillStyle = '#3a2418';
+    ctx.fillRect(x0 + 1, y0 - 3, 2, 6); ctx.fillRect(x0, y0 - 3, 5, 2); // pick
+    ctx.fillStyle = '#ffd040'; ctx.fillRect(x0 + 8, y0 - 2, 8, 3);
+  }
+  onDepthOpen(i) { if (this.scene !== 'mine') return; this.focusDepth(i); const y = depthY(i) + 40; this.confetti(MW / 2, y, 60); this.puff(60, y + 20, '#a08060', 20); this.addFloat(MW / 2, y - 10, 'NEW DEPTH!', '#7aff6a', 2.2, 1.4); this.shake(0.3); }
+  onDepthUp(i, n, stage) {
+    if (this.scene !== 'mine') return;
+    const y = depthY(i) + 30, st = this.G.depthStage(i);
+    this.sparkle(MW / 2, y, 12, DEPTHS[i].ore);
+    if (stage) { const it = DEPTHS[i].items[st - 1]; this.confetti(Math.min(MW - 20, 60 + (st - 1) * 24), y, 40); this.addFloat(MW / 2, y - 6, 'Tunnel expanded! ' + (MINE_ITEM_NAMES[it] || ''), '#7aff6a', 2.4, 1.1); this.shake(0.2); }
+    else this.addFloat(MW / 2, y - 6, n > 1 ? `+${n} levels` : 'Level up!', '#ffe060', 1.1);
+  }
 
   // ------------------------------------------------------------ update
   update(dt) {
@@ -696,6 +718,8 @@ export class World {
       if (Math.abs(this.cam.vx) < 2 && Math.abs(this.cam.vy) < 2) this.cam.vx = this.cam.vy = 0;
       this.clampCam();
     }
+    this.updateTrip(dt);
+    if (this.scene === 'mine') { this.updateMine(dt); this.updateFx(dt); return; }
     this.applyPlacements();
     this.updateDigs(dt);
     this.syncAgents();
@@ -704,6 +728,10 @@ export class World {
     for (const k in this.flash) { this.flash[k] -= dt; if (this.flash[k] <= 0) delete this.flash[k]; }
     this.bubbleTalk = this.bubbleTalk.filter(b => (b.t -= dt) > 0);
     if (this.argueCloud && (this.argueCloud.t -= dt) <= 0) this.argueCloud = null;
+    this.updateFx(dt);
+    this.updateTown(dt);
+  }
+  updateFx(dt) {
     // particles
     for (const p of this.particles) {
       p.t += dt;
@@ -715,6 +743,9 @@ export class World {
     this.particles = this.particles.filter(p => p.t < p.life);
     if (this.particles.length > 600) this.particles.splice(0, this.particles.length - 600);
     this.floats = this.floats.filter(f => (f.t += dt) < f.dur);
+  }
+  updateTown(dt) {
+    const G = this.G;
     // building ambient smoke etc
     if (Math.random() < dt * 3) {
       const opts = ['tavern', 'smithy', 'potion', 'cauldron', 'alchemy', 'hatchery'].filter(id => G.isBuilt(id) && !G.isConstructing(id));
@@ -783,6 +814,7 @@ export class World {
 
   // ------------------------------------------------------------ render
   render() {
+    if (this.scene === 'mine') { this.renderMine(); this.renderTrip(); return; }
     const G = this.G, ctx = this.ctx, z = this.cam.zoom, dpr = this.dpr;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#2a4a24';
@@ -814,6 +846,7 @@ export class World {
       const [w, h] = DECOR_SIZE[d.type];
       const dd = this.districtAt(d.tx, d.ty);
       if (dd && !G.districtOpen(dd.id)) continue;
+      if (d.type === 'dock') { items.push({ y: (d.ty + h) * TILE, draw: () => this.drawDock(d) }); continue; }
       items.push({ y: (d.ty + h) * TILE, draw: () => { ctx.drawImage(buildingSprite(d.type, w, h, d.type === 'hoardmound' ? this.hoardTier() : 0, true), d.tx * TILE, (d.ty + h) * TILE - h * TILE - B_EXTRA); if (d.type === 'campfire') this.drawFire((d.tx + 1) * TILE, (d.ty + h) * TILE - 9, 1); } });
     }
     for (const a of this.agents.values()) {
@@ -855,18 +888,6 @@ export class World {
       for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(c.x + Math.cos(this.time * 9 + i) * 8, c.y + Math.sin(this.time * 7 + i * 2) * 4, 5, 0, 7); ctx.fill(); }
       ctx.fillStyle = '#ffe060'; ctx.fillRect(c.x - 9 + Math.sin(this.time * 12) * 3, c.y - 10, 2, 2); ctx.fillRect(c.x + 7, c.y - 8 + Math.cos(this.time * 10) * 3, 2, 2);
     }
-    // bubbles
-    for (const b of G.rt.bubbles) {
-      const [x, y] = this.bubblePos(b);
-      const age = (G.now() - b.born) / 1000;
-      const sc = Math.min(1, age * 4);
-      ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
-      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(0, 0, 9, 0, 7); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1; ctx.stroke();
-      ctx.drawImage(iconCanvas('coin'), -5, -5);
-      ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(-6, -6, 2, 2);
-      ctx.restore();
-    }
     // particles
     for (const p of this.particles) {
       const k = 1 - p.t / p.life;
@@ -881,6 +902,7 @@ export class World {
     // screen-space overlays
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.renderLabels(ctx);
+    this.renderTrip();
   }
 
   fogTexture() {
@@ -1324,3 +1346,5 @@ function fitText(ctx, t, w) {
   while (t.length > 3 && ctx.measureText(t + '…').width > w) t = t.slice(0, -1);
   return t + '…';
 }
+
+Object.assign(World.prototype, MineMixin);

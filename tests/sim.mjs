@@ -8,6 +8,7 @@ let T = Date.now();
 G.now = () => T;
 G.init(null);
 const s = G.s;
+G.mineTrip();
 const HOURS = +(process.argv[2] || 8);
 const PRESTIGE = process.argv[3] !== 'noprestige';
 const events = [];
@@ -20,18 +21,30 @@ G.on('conquer', r => log(`CONQUERED ${r.id}`));
 G.on('prestige', n => log(`PRESTIGE +${n} teeth (total ${s.teethEarned})`));
 G.on('recruit', (g, info) => { if (G.rarityIdx(g.rarity) >= 2 && !info.dup) log(`Recruited ${g.rarity} ${g.name}`); });
 
+// greedy: whichever single purchase (a mine depth level or a town business level) adds the most gold/s per gold
 function bestBuy() {
   let best = null;
-  for (const b of BIZ) {
-    if (!G.canBuildHere(b.id)) continue;
-    const c = G.bizCost(b.id, 1);
-    if (c > s.gold) continue;
-    const before = G.buildingIncome(b.id, false);
-    const lv = s.buildings[b.id].lvl;
-    let after = before === 0 ? b.income * G.globalMult() : before * (lv + 1) / lv * G.milestoneMult(lv + 1) / G.milestoneMult(lv);
-    const roi = (after - before + 1e-9) / c;
-    if (!best || roi > best.roi) best = { id: b.id, roi };
-  }
+  const base = G.incomePerSec(false);
+  BIZ.forEach((b, i) => {
+    // mine depth
+    if (G.depthOpen(i) || !G.depthLock(i)) {
+      const c = G.depthCost(i, 1);
+      if (c <= s.gold) {
+        s.mine.lv[i]++; const after = G.incomePerSec(false); s.mine.lv[i]--;
+        const roi = (after - base + 1e-9) / c;
+        if (!best || roi > best.roi) best = { depth: i, roi };
+      }
+    }
+    // town business (powers the depth)
+    if (G.canBuildHere(b.id)) {
+      const c = G.bizCost(b.id, 1);
+      if (c <= s.gold) {
+        const st = s.buildings[b.id]; const built = st.built; st.lvl++; st.built = 0; const after = G.incomePerSec(false); st.lvl--; st.built = built;
+        const roi = (after - base + 1e-9) / c + (st.lvl === 0 ? 1e-12 : 0);
+        if (!best || roi > best.roi) best = { id: b.id, roi };
+      }
+    }
+  });
   return best;
 }
 
@@ -61,7 +74,9 @@ for (let sec = 0; sec < totalSec; sec++) {
   // research
   for (const r of RESEARCH) { if (!s.research[r.id]) G.doResearch(r.id); }
   // buy businesses
-  for (let k = 0; k < 50; k++) { const bb = bestBuy(); if (!bb) break; G.buy(bb.id, 1); }
+  // build each town business once it is cheap (it adds worker slots and powers its depth)
+  for (const b of BIZ) if (!G.isBuilt(b.id) && G.canBuildHere(b.id) && G.bizCost(b.id, 1) < s.gold * 0.5) G.buy(b.id, 1);
+  for (let k = 0; k < 50; k++) { const bb = bestBuy(); if (!bb) break; if (bb.depth !== undefined) G.buyDepth(bb.depth, 1); else G.buy(bb.id, 1); }
   // recruit & assign & train
   if (G.canRecruit() && s.mushrooms >= G.recruitCost()) G.recruit('basic');
   if (s.buildings.barracks.lvl > 0) { for (const g of G.defenders()) G.assign(g.uid, null); }

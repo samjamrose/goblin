@@ -98,14 +98,14 @@ export const JOB_LINES = {
 };
 
 // ---------------------------------------------------------------- Buildings
-// kind: 'biz' produces gold. 'util' has special effect.
+// kind: 'biz' powers its paired mine depth (DEPTHS[i]), where gold is dug. 'util' has special effect.
 export const BUILDINGS = [
   { id: 'shroom', name: 'Mushroom Patch', kind: 'biz', job: 'farmer', district: 'muck', tx: 19, ty: 18, w: 3, h: 3,
     baseCost: 8, growth: 1.12, income: 0.6, unlock: 1, res: { mushrooms: 0.15 },
     desc: 'Grows mushrooms of mostly-safe varieties. Makes a little gold and lots of mushrooms.' },
-  { id: 'mine', name: 'Gold Mine', kind: 'biz', job: 'miner', district: 'muck', tx: 23, ty: 18, w: 3, h: 3,
+  { id: 'mine', name: 'Ore Smelter', kind: 'biz', job: 'miner', district: 'muck', tx: 23, ty: 18, w: 3, h: 3,
     baseCost: 90, growth: 1.13, income: 4, unlock: 1, res: { ore: 0.06 },
-    desc: 'A hole with gold in it. Goblins love holes. Also produces ore.' },
+    desc: 'Smelts rocks into ore and sometimes into soup. Produces ore.' },
   { id: 'tavern', name: 'Grog Tavern', kind: 'biz', job: 'brewer', district: 'muck', tx: 19, ty: 25, w: 3, h: 3,
     baseCost: 1200, growth: 1.135, income: 12, unlock: 3,
     desc: 'Serves grog, mystery stew, and regret.' },
@@ -168,10 +168,35 @@ export const BUILDINGS = [
 export const BUILDING_BY_ID = Object.fromEntries(BUILDINGS.map(b => [b.id, b]));
 export const BIZ = BUILDINGS.filter(b => b.kind === 'biz');
 
+// ---- The Deep Mines: gold is dug here. Depth i is powered by town business BIZ[i].
+// Each depth adds a new structure at these levels, and its tunnel grows longer each time.
+export const MINE_STAGES = [1, 5, 10, 25, 50, 75, 100, 150, 200, 300];
+export const DEPTHS = [
+  { name: 'Muddy Dig', rock: '#5a4030', wall: '#3a2a20', ore: '#c8a040', light: '#ffb050', items: ['beams', 'lantern', 'rails', 'crates', 'ladder', 'goldpile', 'pump', 'barrels', 'crane', 'drill'] },
+  { name: 'Copper Vein', rock: '#6a4a3a', wall: '#3a241c', ore: '#e07a40', light: '#ffa060', items: ['lantern', 'beams', 'vein', 'rails', 'conveyor', 'crates', 'drill', 'goldpile', 'tent', 'crane'] },
+  { name: 'Silver Seam', rock: '#5a5a66', wall: '#2e2e38', ore: '#d8e0f0', light: '#c8e0ff', items: ['beams', 'vein', 'lantern', 'barrels', 'rails', 'pump', 'conveyor', 'ladder', 'drill', 'goldpile'] },
+  { name: 'Gold Gallery', rock: '#6a5530', wall: '#3a2c14', ore: '#ffd040', light: '#ffd870', items: ['vein', 'lantern', 'goldpile', 'beams', 'rails', 'statue', 'crane', 'conveyor', 'drill', 'crates'] },
+  { name: 'Glowshroom Grotto', rock: '#3a4a4a', wall: '#1c2a2a', ore: '#7affb0', light: '#7affb0', items: ['mushrooms', 'lantern', 'beams', 'pump', 'mushrooms', 'tent', 'rails', 'wheel', 'goldpile', 'drill'] },
+  { name: 'Crystal Caverns', rock: '#3a3a5a', wall: '#1c1c34', ore: '#a0c8ff', light: '#a0c8ff', items: ['crystals', 'beams', 'crystals', 'lantern', 'bridge', 'rails', 'crystals', 'conveyor', 'drill', 'goldpile'] },
+  { name: 'Underground River', rock: '#2e4a5a', wall: '#14283a', ore: '#5ac8ff', light: '#8ad8ff', items: ['wheel', 'lantern', 'bridge', 'pump', 'beams', 'rails', 'crane', 'barrels', 'wheel', 'drill'] },
+  { name: 'Gem Geodes', rock: '#4a3a4a', wall: '#2a1a2a', ore: '#ff5aa0', light: '#ff9ad0', items: ['crystals', 'vein', 'lantern', 'beams', 'goldpile', 'crane', 'crystals', 'rails', 'conveyor', 'drill'] },
+  { name: 'Ancient Dwarf Halls', rock: '#5a5048', wall: '#2c2620', ore: '#e8c890', light: '#ffc870', items: ['pillars', 'statue', 'lantern', 'pillars', 'rails', 'forge', 'goldpile', 'statue', 'crane', 'drill'] },
+  { name: 'Magma Forge', rock: '#4a2a22', wall: '#241010', ore: '#ff7a20', light: '#ff7a30', items: ['lava', 'forge', 'beams', 'lava', 'rails', 'pump', 'forge', 'conveyor', 'crane', 'drill'] },
+  { name: 'Mithril Depths', rock: '#34404a', wall: '#141c24', ore: '#b0fff0', light: '#b0fff0', items: ['vein', 'crystals', 'lantern', 'bridge', 'beams', 'drill', 'rails', 'pillars', 'conveyor', 'goldpile'] },
+  { name: "Dragon's Hoard Vault", rock: '#5a3020', wall: '#2a120a', ore: '#ffd040', light: '#ffb040', items: ['goldpile', 'skull', 'lava', 'goldpile', 'pillars', 'rails', 'goldpile', 'crane', 'forge', 'drill'] },
+  { name: 'Core of the World', rock: '#3a1a3a', wall: '#1a0a1a', ore: '#ff80ff', light: '#ff9aff', items: ['orb', 'crystals', 'lava', 'pillars', 'orb', 'bridge', 'crystals', 'statue', 'drill', 'goldpile'] },
+];
+
+export const MINE_ITEM_NAMES = {
+  beams: 'Timber Supports', lantern: 'Hanging Lantern', rails: 'Mine Cart Rails', crates: 'Supply Crates', ladder: 'Ladders',
+  goldpile: 'Ore Heap', pump: 'Water Pump', barrels: 'Grog Barrels', crane: 'Ore Crane', drill: 'Steam Drill', vein: 'Exposed Vein',
+  conveyor: 'Conveyor Belt', tent: "Miners' Camp", statue: 'Golden Statue', mushrooms: 'Glowshroom Garden', crystals: 'Crystal Cluster',
+  wheel: 'Water Wheel', bridge: 'Rope Bridge', pillars: 'Dwarf Pillars', forge: 'Deep Forge', lava: 'Lava Channel', skull: 'Dragon Skull', orb: 'Core Orb',
+};
 export const MILESTONES = [25, 50, 100, 200, 300, 400, 500, 600, 800, 1000];
 // tier visuals based on number of milestones reached (cap 4)
 
-export const DECOR_SIZE = { campfire: [2, 2], chiefhut: [3, 3], fountain: [3, 2], statue: [2, 2], hoardmound: [5, 4] };
+export const DECOR_SIZE = { dock: [3, 1], campfire: [2, 2], chiefhut: [3, 3], fountain: [3, 2], statue: [2, 2], hoardmound: [5, 4] };
 export const HEAL_MS = 120000;
 export const RECOVER_MS = 90000; // time for a wounded goblin to go from 0 to full health in town
 export const MEDIC_NAMES = ['Nurse Bandagewart', 'Doc Scabbins', 'Sister Stitchgob', 'Medic Mossfoot', 'Dr. Pokewell', 'Nurse Plasterpants', 'Healer Hobnob', 'Doc Leechlove', 'Sawbones Snik', 'Nurse Gauzegrin'];
@@ -181,6 +206,7 @@ export const DECOR = [
   { type: 'fountain', tx: 49, ty: 25 },
   { type: 'statue', tx: 23, ty: 25 },
   { type: 'hoardmound', tx: 6, ty: 3 },
+  { type: 'dock', tx: 29, ty: 37 },
 ];
 
 export const DISTRICTS = [
@@ -586,10 +612,10 @@ FUNNY_EVENTS.push(
     choices: [
       { t: 'Search {a}’s hut', o: [[1, 'gold_s', 'Found 200 socks and a sack of coins. +{gold} gold.']] },
       { t: 'Declare socks optional', o: [[1, 'buff_gold', 'Barefoot goblins work faster?! Income ×2 for 60s.']] } ] },
-  { id: 'slime', title: 'Mysterious Slime', text: 'Green slime is oozing out of the Gold Mine. {a} licked it. {a} is now glowing.',
+  { id: 'slime', title: 'Mysterious Slime', text: 'Green slime is oozing out of the Ore Smelter. {a} licked it. {a} is now glowing.',
     choices: [
       { t: 'Bottle it', o: [[1, 'ore', 'The slime hardens into ore. +{ore} ore.']] },
-      { t: 'Mine around it', o: [[1, 'buff_mine', 'The glowing slime lights the tunnels. Gold Mine ×3 for 2 minutes!']] } ] },
+      { t: 'Mine around it', o: [[1, 'buff_mine', 'The glowing slime lights the tunnels. Copper Vein ×3 for 2 minutes!']] } ] },
   { id: 'debate', title: 'The Great Mushroom Debate', text: '{a} says mushrooms are vegetables. {b} says they are tiny trees. The whole town has picked sides.',
     choices: [
       { t: 'Side with {a}', o: [[1, 'mush', 'The vegetable team throws a feast. +{mush} mushrooms.']] },
@@ -699,15 +725,19 @@ export const DAILY_TEMPLATES = [
 
 // Guided story quests (onboarding + long goals). check(state, G) returns progress 0..1 handled in game.js
 export const STORY = [
-  { text: 'Build the Mushroom Patch', goal: { build: 'shroom' }, reward: { gold: 15 }, hint: 'Tap the empty plot with the sign, then BUILD.' },
-  { text: 'Build the Gold Mine', goal: { build: 'mine' }, reward: { gold: 50 }, hint: 'Tap the empty plot next to the Mushroom Patch.' },
+  { text: 'Take the boat to the Mines', goal: { stat: ['mineTrips', 1] }, reward: { gold: 15 }, hint: 'Cross the bridge to the dock and tap the boat, or tap the ⛏ Mines button.', mig: 3 },
+  { text: 'Upgrade the Muddy Dig to level 5', goal: { depth: [0, 5] }, reward: { gold: 30 }, hint: 'In the Mines, tap the Muddy Dig and buy levels. Gold comes from the mines!', mig: 3 },
+  { text: 'Build the Mushroom Patch', goal: { build: 'shroom' }, reward: { gold: 15 }, hint: 'Town businesses power the mine below them. The Patch boosts the Muddy Dig.' },
+  { text: 'Build the Ore Smelter', goal: { build: 'mine' }, reward: { gold: 50 }, hint: 'Open Build and place it anywhere. It powers the Copper Vein.' },
+  { text: 'Dig deeper: open the Copper Vein', goal: { depth: [1, 1] }, reward: { gold: 120 }, hint: 'Get the Muddy Dig to level 10, then tap the rubble below it in the Mines.', mig: 3 },
   { text: 'Upgrade Mushroom Patch to level 5', goal: { blvl: ['shroom', 5] }, reward: { mushrooms: 20 } },
   { text: 'Recruit a goblin at the Cauldron', goal: { stat: ['recruits', 1] }, reward: { gold: 150 }, hint: 'Tap the bubbling cauldron.' },
   { text: 'Assign a goblin to a building', goal: { assigned: 1 }, reward: { gems: 10 }, hint: 'Open a building and tap an empty worker slot.' },
   { text: 'Pop 3 coin bubbles', goal: { stat: ['bubbles', 3] }, reward: { gold: 300 } },
-  { text: 'Upgrade Gold Mine to level 10', goal: { blvl: ['mine', 10] }, reward: { gems: 10 } },
+  { text: 'Upgrade the Copper Vein to level 10', goal: { depth: [1, 10] }, reward: { gems: 10 } },
   { text: 'Reach Capital Level 3', goal: { level: 3 }, reward: { mushrooms: 50 } },
   { text: 'Build the Grog Tavern', goal: { build: 'tavern' }, reward: { gold: 2000 } },
+  { text: 'Dig deeper: open the Silver Seam', goal: { depth: [2, 1] }, reward: { gems: 10 }, mig: 3 },
   { text: 'Reach Capital Level 4', goal: { level: 4 }, reward: { gems: 15 } },
   { text: 'Unlock the Market Ward', goal: { district: 'market' }, reward: { gold: 3000 } },
   { text: 'Build the Expedition Lodge', goal: { build: 'lodge' }, reward: { gems: 15 } },
@@ -716,11 +746,14 @@ export const STORY = [
   { text: 'Send an expedition', goal: { stat: ['expSent', 1] }, reward: { gems: 15 } },
   { text: 'Own 6 goblins', goal: { goblins: 6 }, reward: { gems: 20 } },
   { text: 'Build the Scrap Smithy', goal: { build: 'smithy' }, reward: { ore: 30 } },
+  { text: 'Dig deeper: open the Gold Gallery', goal: { depth: [3, 1] }, reward: { gems: 15 }, mig: 3 },
   { text: 'Build the Tinker Shed', goal: { build: 'research' }, reward: { ore: 30 } },
   { text: 'Complete a research project', goal: { research: 1 }, reward: { gems: 20 } },
   { text: 'Build the Bonk Barracks', goal: { build: 'barracks' }, reward: { gems: 20 } },
   { text: 'Defeat Old Barkbeard (Woods boss)', goal: { boss: 'woods' }, reward: { gems: 50 } },
   { text: 'Upgrade any building to level 50', goal: { anyLvl: 50 }, reward: { gems: 25 } },
+  { text: 'Upgrade a mine depth to level 100', goal: { anyDepth: 100 }, reward: { gems: 40 }, mig: 3 },
+  { text: 'Dig down to the Crystal Caverns', goal: { depth: [5, 1] }, reward: { gems: 40 }, mig: 3 },
   { text: 'Earn 1 Billion gold this run', goal: { runGold: 1e9 }, reward: { gems: 30 } },
   { text: 'Unlock Shady Alley', goal: { district: 'shady' }, reward: { gems: 30 } },
   { text: 'Earn 25 Golden Teeth', goal: { teeth: 25 }, reward: { gems: 100 }, hint: 'Golden Teeth come automatically as you earn gold. Spend them in More → Tooth Shrine.' },
@@ -730,9 +763,11 @@ export const STORY = [
   { text: 'Defeat Sir Reginald the Unwashed', goal: { boss: 'knightshire' }, reward: { gems: 80 } },
   { text: 'Complete a treasure set', goal: { sets: 1 }, reward: { gems: 80 } },
   { text: 'Unlock Dragonview Heights', goal: { district: 'dragon' }, reward: { gems: 100 } },
+  { text: "Dig down to the Dragon's Hoard Vault", goal: { depth: [11, 1] }, reward: { gems: 150 }, mig: 3 },
   { text: 'Own a Mythical goblin', goal: { rarity: 4 }, reward: { gems: 100 } },
   { text: 'Defeat Vorgath the Hoarder', goal: { boss: 'ember' }, reward: { gems: 300 } },
   { text: 'Build the Goblin King\'s Palace', goal: { build: 'palace' }, reward: { gems: 300 } },
+  { text: 'Reach the Core of the World', goal: { depth: [12, 1] }, reward: { gems: 500 }, mig: 3 },
 ];
 
 // ----------------------------------------------------------------- Achievements
@@ -844,3 +879,9 @@ export const VENTURES = [
 ];
 
 export const MERCHANT_NAMES = ['Gribble the Wandering Trader'];
+
+// research targets a business; its gold multiplier now lands on that business's mine depth
+for (const r of RESEARCH) if (r.eff && r.eff.b) {
+  const i = BIZ.findIndex(b => b.id === r.eff.b);
+  if (i >= 0) r.desc = r.desc.replace(/^.*?×3/, DEPTHS[i].name + ' ×3');
+}

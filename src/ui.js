@@ -3,6 +3,7 @@ import {
   RARITIES, JOBS, TRAITS, BUILDINGS, BUILDING_BY_ID, BIZ, DISTRICTS, DISTRICT_BY_ID, REGIONS, REGION_BY_ID, STAGES_PER_REGION,
   MISSIONS, TREASURES, TREASURE_SETS, RESEARCH, PERKS, NAMED, NAMED_BY_ID, ABILITY_TEXT, DAILY_TEMPLATES, STORY, ACHIEVEMENTS,
   LOGIN_REWARDS, PRESTIGE_MIN_GOLD, teethFor, VENTURES, xpForLevel, ENEMIES, MILESTONES, RANKS, TILE, TRACK_UNLOCKS,
+  DEPTHS, MINE_STAGES, MINE_ITEM_NAMES,
 } from './data.js';
 import { fmt, fmtTime, clamp, pct } from './util.js';
 import { winMargin } from './battlesim.js';
@@ -136,26 +137,29 @@ export class UI {
   render() {
     const v = this.view; if (!v) return;
     const fn = {
-      build: this.pBuild, building: this.pBuilding, goblins: this.pGoblins, explore: this.pExplore, region: this.pRegion,
+      build: this.pBuild, building: this.pBuilding, depth: this.pDepth, goblins: this.pGoblins, explore: this.pExplore, region: this.pRegion,
       quests: this.pQuests, more: this.pMore,
     }[v.tab];
     if (fn) fn.call(this, v.sub, v.param);
   }
 
   // ------------------------------------------------------------ BUILD
-  pBuild(sub = 'biz') {
+  pBuild(sub) {
     const G = this.G;
+    if (!sub) sub = this.world.inMine && this.world.inMine() ? 'mines' : 'biz';
     this.title('Build & Upgrade');
     const resDot = G.isBuilt('research') && RESEARCH.some(r => !G.s.research[r.id] && G.s.level >= r.lvl && G.s.gold >= G.researchCost(r).gold && G.s.ore >= G.researchCost(r).ore);
     const distDot = DISTRICTS.some(d => !G.s.districts[d.id] && G.s.level >= d.unlock && G.s.gold >= G.districtCost(d.id));
     const nb = this.newBuildable();
-    this.tabs([['biz', 'Businesses', nb.some(b => b.kind === 'biz')], ['util', 'Utilities', nb.some(b => b.kind === 'util')], ['research', 'Research', resDot], ['districts', 'Districts', distDot]], sub, 'build');
+    const mineDot = DEPTHS.some((d, i) => (G.depthOpen(i) || !G.depthLock(i)) && G.s.gold >= G.depthCost(i, 1) && (!G.depthOpen(i) || G.depthLvl(i) < 10));
+    this.tabs([['mines', '⛏ Mines', mineDot], ['biz', 'Businesses', nb.some(b => b.kind === 'biz')], ['util', 'Utilities', nb.some(b => b.kind === 'util')], ['research', 'Research', resDot], ['districts', 'Districts', distDot]], sub, 'build');
     if (sub === 'research') return this.pResearch();
     if (sub === 'districts') return this.pDistricts();
+    if (sub === 'mines') return this.pMines();
     let h = '';
     if (sub === 'biz') {
       h += `<div class="amt">${[1, 10, 100, 'max'].map(a => `<button class="${this.buyAmt === a ? 'on' : ''}" data-act="amt" data-v="${a}">${a === 'max' ? 'MAX' : '×' + a}</button>`).join('')}</div>`;
-      h += `<div class="small muted center" style="margin:-2px 0 8px">Every milestone level (${MILESTONES.slice(0, 4).join(', ')}...) doubles a building's income!</div>`;
+      h += `<div class="small muted center" style="margin:-2px 0 8px">Town businesses don't dig gold: each one <b>powers the mine depth</b> below it (more levels = bigger boost) and adds worker slots.</div>`;
       for (const b of BIZ) h += this.bizCard(b);
     } else {
       for (const b of BUILDINGS.filter(b => b.kind === 'util')) h += this.utilCard(b);
@@ -176,8 +180,8 @@ export class UI {
       <div class="thumb"><img src="${bThumb(b.id, G.tier(b.id))}"></div>
       <div class="grow">
         <div class="bname">${b.name} ${st.lvl ? `<span class="tag">Lv ${st.lvl}</span>` : '<span class="tag new">NEW</span>'}</div>
-        <div class="bsub" ${this.b(el => { el.innerHTML = st.lvl ? `${iconImg('coin')} ${fmt(G.buildingIncome(b.id))}/s · ${G.workers(b.id).length}/${G.workerSlots(b.id)} ${iconImg('goblin')}${G.s.damaged[b.id] ? ' · <span class="red-t">Damaged!</span>' : ''}` : `Earns ${fmt(b.income * G.globalMult())}/s at Lv 1`; })}></div>
-        ${nm ? `<div class="pb"><i style="width:${((st.lvl - prevM) / (nm - prevM) * 100).toFixed(0)}%"></i></div><div class="small muted">Next ×2 at Lv ${nm}</div>` : ''}
+        <div class="bsub" ${this.b(el => { el.innerHTML = st.lvl ? `⛏ ${DEPTHS[G.bizIdx(b.id)].name} ×${G.bizBoost(b.id).toFixed(2)} · ${G.workers(b.id).length}/${G.workerSlots(b.id)} ${iconImg('goblin')}${G.s.damaged[b.id] ? ' · <span class="red-t">Damaged!</span>' : ''}` : `Powers the ${DEPTHS[G.bizIdx(b.id)].name}`; })}></div>
+        ${nm ? `<div class="pb"><i style="width:${((st.lvl - prevM) / (nm - prevM) * 100).toFixed(0)}%"></i></div><div class="small muted">Bigger boost at Lv ${nm}</div>` : ''}
       </div>
       <button class="btn buybtn" data-act="buy" data-id="${b.id}" ${this.b(el => this.buyBtn(el, b))}></button>
     </div>`;
@@ -217,6 +221,83 @@ export class UI {
       case 'tower': return l ? `+${l * 10}% defense HP · +${l * 5}% golden goblins` : 'Spot invaders, attract gold';
     }
     return '';
+  }
+
+  // ------------------------------------------------------------ THE DEEP MINES
+  pMines() {
+    const G = this.G;
+    let h = `<div class="amt">${[1, 10, 100, 'max'].map(a => `<button class="${this.buyAmt === a ? 'on' : ''}" data-act="amt" data-v="${a}">${a === 'max' ? 'MAX' : '×' + a}</button>`).join('')}</div>`;
+    h += `<div class="small muted center" style="margin:-2px 0 8px">All gold is dug in the mines. Upgrade a depth to dig faster; it grows and gets new machinery at Lv ${MINE_STAGES.slice(1, 5).join(', ')}... Reach Lv ${G.digGate()} to dig to the next depth.</div>`;
+    if (!this.world.inMine()) h += `<button class="btn blue wide" data-act="travel" style="margin-bottom:8px">⛵ Take the boat to the Mines</button>`;
+    DEPTHS.forEach((d, i) => {
+      const open = G.depthOpen(i), lock = G.depthLock(i);
+      if (!open && (i > 0 && !G.depthOpen(i - 1))) return;
+      if (!open) {
+        h += `<div class="card row ${lock ? 'lock' : 'hl'}" data-act="open-depth" data-i="${i}"><div class="thumb" style="background:${d.wall}"><img src="${icon('pick')}" style="width:30px;opacity:.6"></div><div class="grow"><div class="bname">Dig to the ${d.name}</div><div class="bsub">${lock ? '🔒 ' + lock : 'A brand new depth!'}</div></div>
+          ${lock ? '' : `<button class="btn buybtn" data-act="dig" data-i="${i}" ${this.b(el => { const c = G.depthCost(i, 1); el.className = 'btn buybtn' + (G.s.gold >= c ? '' : ' no'); el.innerHTML = `DIG<small>${iconImg('coin')}${fmt(c)}</small>`; })}></button>`}</div>`;
+        return;
+      }
+      const l = G.depthLvl(i), ns = G.nextStage(i), prev = [0, ...MINE_STAGES].filter(m => m <= l).pop() || 0;
+      h += `<div class="card row" data-act="open-depth" data-i="${i}"><div class="thumb" style="background:linear-gradient(${d.rock},${d.wall});box-shadow:inset 0 -6px 0 ${d.ore}"><img src="${icon('pick')}" style="width:30px"></div>
+        <div class="grow"><div class="bname">${d.name} <span class="tag">Lv ${l}</span></div>
+        <div class="bsub" ${this.b(el => { el.innerHTML = `${iconImg('coin')} ${fmt(G.depthIncome(i))}/s${G.s.damaged[BIZ[i].id] ? ' · <span class="red-t">Town building damaged!</span>' : ''}`; })}></div>
+        ${ns ? `<div class="pb"><i style="width:${((l - prev) / (ns - prev) * 100).toFixed(0)}%"></i></div><div class="small muted">Expands at Lv ${ns}: ${MINE_ITEM_NAMES[d.items[G.depthStage(i)]] || 'more tunnel'}</div>` : '<div class="small muted">Fully expanded!</div>'}</div>
+        <button class="btn buybtn" data-act="buy-depth" data-i="${i}" ${this.b(el => this.depthBtn(el, i))}></button></div>`;
+    });
+    this.setBody(h);
+  }
+  depthBtn(el, i, fixed) {
+    const G = this.G, amt = fixed || this.buyAmt;
+    const n = amt === 'max' ? Math.max(1, G.depthMaxAffordable(i)) : amt;
+    const c = G.depthCost(i, n);
+    el.className = el.className.replace(/ ?no\b/g, '') + (G.s.gold >= c ? '' : ' no');
+    el.dataset.n = n;
+    el.innerHTML = `${amt === 'max' && fixed ? 'MAX ×' + n : 'UP ×' + n}<small>${iconImg('coin')}${fmt(c)}</small>`;
+  }
+  pDepth(_, i) {
+    const G = this.G, d = DEPTHS[i], biz = BIZ[i], l = G.depthLvl(i);
+    i = +i;
+    this.title('⛏ ' + d.name);
+    this.tabsEl.innerHTML = '';
+    let h = '';
+    if (!l) {
+      const lock = G.depthLock(i);
+      h += `<div class="card paper center"><p>Somewhere below the rubble lies the <b>${d.name}</b>. ${['Probably treasure.', 'Definitely rocks.', 'Possibly a grumpy mole.'][i % 3]}</p>
+        ${lock ? `<p>🔒 ${lock}</p>` : `<button class="btn gold wide" data-act="dig" data-i="${i}" ${this.b(el => { const c = G.depthCost(i, 1); el.classList.toggle('no', G.s.gold < c); el.innerHTML = `⛏ DIG DEEPER · ${iconImg('coin')}${fmt(c)}`; })}></button>`}</div>`;
+      return this.setBody(h);
+    }
+    const ns = G.nextStage(i), nm = G.nextMilestone(l), bst = G.s.buildings[biz.id];
+    h += `<div class="stat-grid">
+      <div class="stat">Gold dug<b ${this.b(el => el.textContent = fmt(G.depthIncome(i)) + '/s')}></b></div>
+      <div class="stat">Milestone bonus<b>×${fmt(G.milestoneMult(l))}</b></div>
+      <div class="stat">Next ×2 at<b>${nm ? 'Lv ' + nm : 'MAX'}</b></div>
+      <div class="stat">Town boost<b ${this.b(el => el.textContent = '×' + G.bizBoost(biz.id).toFixed(2))}></b></div>
+    </div>`;
+    h += `<h3>Upgrade</h3><div class="row">${[1, 10, 'max'].map(n => `<button class="btn grow buybtn" data-act="buy-depth" data-i="${i}" data-fixed="${n}" ${this.b(el => this.depthBtn(el, i, n))}></button>`).join('')}</div>`;
+    // structures
+    const st = G.depthStage(i);
+    h += `<h3>Tunnel (${st}/${MINE_STAGES.length})</h3><div class="small" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">`;
+    d.items.forEach((it, k) => { h += `<div class="${k < st ? '' : 'muted'}">${k < st ? '✅' : '🔒'} ${MINE_ITEM_NAMES[it]} <small class="muted">Lv ${MINE_STAGES[k]}</small></div>`; });
+    h += `</div>`;
+    if (ns) h += `<p class="small muted">Next expansion at Lv ${ns}: the tunnel grows longer and adds: <b>${MINE_ITEM_NAMES[d.items[st]]}</b>.</p>`;
+    // town power
+    h += `<h3>Powered by the town</h3><div class="card row"><div class="thumb"><img src="${bThumb(biz.id, G.tier(biz.id))}"></div><div class="grow"><div class="bname">${biz.name} ${bst.lvl ? `<span class="tag">Lv ${bst.lvl}</span>` : ''}</div>
+      <div class="bsub">${bst.lvl ? `Boosts this depth ×${G.bizBoost(biz.id).toFixed(2)} · ${G.workers(biz.id).length} worker(s) ×${G.workerMult(biz.id).toFixed(2)}` : 'Build it in town to boost this depth and add workers!'}</div></div>
+      <button class="btn small" data-act="town-building" data-id="${biz.id}">${bst.lvl ? 'Open' : 'Build'}</button></div>`;
+    if (i + 1 < DEPTHS.length && !G.depthOpen(i + 1)) {
+      const lock = G.depthLock(i + 1);
+      h += `<h3>Deeper down</h3><div class="card row"><div class="grow"><div class="bname">${DEPTHS[i + 1].name}</div><div class="bsub">${lock ? '🔒 ' + lock : 'Ready to dig!'}</div></div>
+        ${lock ? '' : `<button class="btn buybtn" data-act="dig" data-i="${i + 1}" ${this.b(el => { const c = G.depthCost(i + 1, 1); el.className = 'btn buybtn' + (G.s.gold >= c ? '' : ' no'); el.innerHTML = `DIG<small>${iconImg('coin')}${fmt(c)}</small>`; })}></button>`}</div>`;
+    }
+    this.setBody(h);
+  }
+  travel(to, then) {
+    const w = this.world;
+    const target = to || (w.inMine() ? 'town' : 'mine');
+    if ((target === 'mine') === w.inMine()) { then && then(); return; }
+    this.closeSheet();
+    w.travelTo(target);
+    if (then) setTimeout(then, 1150);
   }
 
   pResearch() {
@@ -260,13 +341,13 @@ export class UI {
     if (b.kind === 'biz') {
       if (st.lvl === 0) {
         if (!G.canBuildHere(id)) h += `<div class="card paper center">🔒 Requires Capital Level ${b.unlock}.</div>`;
-        else h += `<div class="card center"><p>Build it to start earning <b class="gold-t">${fmt(b.income * G.globalMult())}/s</b>!</p><button class="btn gold wide" data-act="buy" data-id="${id}" data-n="1" ${this.b(el => el.classList.toggle('no', G.s.gold < G.bizCost(id, 1)))}>BUILD · ${iconImg('coin')}${fmt(G.bizCost(id, 1))}</button></div>`;
+        else h += `<div class="card center"><p>Build it to power the <b class="gold-t">${DEPTHS[G.bizIdx(id)].name}</b> in the mines and get worker slots!</p><button class="btn gold wide" data-act="buy" data-id="${id}" data-n="1" ${this.b(el => el.classList.toggle('no', G.s.gold < G.bizCost(id, 1)))}>BUILD · ${iconImg('coin')}${fmt(G.bizCost(id, 1))}</button></div>`;
       } else {
         const nm = G.nextMilestone(st.lvl);
         h += `<div class="stat-grid">
-          <div class="stat">Income<b ${this.b(el => el.textContent = fmt(G.buildingIncome(id)) + '/s')}></b></div>
+          <div class="stat">Powers ${DEPTHS[G.bizIdx(id)].name}<b ${this.b(el => el.textContent = '×' + G.bizBoost(id).toFixed(2))}></b></div>
+          <div class="stat">That depth digs<b ${this.b(el => el.textContent = fmt(G.buildingIncome(id)) + '/s')}></b></div>
           <div class="stat">Workers bonus<b ${this.b(el => el.textContent = '×' + G.workerMult(id).toFixed(2))}></b></div>
-          <div class="stat">Milestone bonus<b>×${fmt(G.milestoneMult(st.lvl))}</b></div>
           <div class="stat">Next milestone<b>${nm ? 'Lv ' + nm : 'MAX'}</b></div>
           ${b.res ? `<div class="stat">Also produces<b>${b.res.mushrooms ? fmt(G.mushroomRate()) + ' 🍄/s' : fmt(G.oreRate()) + ' ore/s (total)'}</b></div>` : ''}
           ${b.variance ? `<div class="stat">Luck right now<b ${this.b(el => el.textContent = '×' + G.rt.casinoMult.toFixed(2))}></b></div>` : ''}
@@ -275,6 +356,7 @@ export class UI {
           const k = n === 'max' ? Math.max(1, G.maxAffordable(id)) : n; const c = G.bizCost(id, k); el.classList.toggle('no', G.s.gold < c);
           el.innerHTML = `${n === 'max' ? 'MAX ×' + k : '×' + n}<small>${iconImg('coin')}${fmt(c)}</small>`;
         })}></button>`).join('')}</div>`;
+        h += `<button class="btn small blue" style="margin-top:8px" data-act="goto-depth" data-i="${G.bizIdx(id)}">⛏ See the ${DEPTHS[G.bizIdx(id)].name}</button>`;
         h += this.workerSlotsHtml(id);
         if (id === 'market') h += this.bazaarHtml();
         if (id === 'casino') h += this.casinoHtml();
@@ -320,6 +402,7 @@ export class UI {
   // ------------------------------------------------------------ placement & infirmary
   startPlacement(id, mode) {
     const G = this.G, b = BUILDING_BY_ID[id];
+    if (this.world.inMine()) { this.travel('town', () => this.startPlacement(id, mode)); return; }
     this.closeSheet(); this.closeModal();
     const ok = this.world.startPlacing(id, mode);
     if (!ok) { this.toast('No free land! Unlock a district for more space.', 'bad'); return; }
@@ -1024,9 +1107,12 @@ export class UI {
     const focusB = (id) => { const b = G.pos(id); this.closeSheet(); this.world.focusBuilding(id); this.world.pointer = { x: (b.tx + b.w / 2) * TILE, y: b.ty * TILE - 12 }; setTimeout(() => { this.world.pointer = null; }, 6000); };
     if (g.build) { if (G.canBuildHere(g.build) && this.world.shown(BUILDING_BY_ID[g.build])) focusB(g.build); else { this.openTab('build', BUILDING_BY_ID[g.build].kind === 'biz' ? 'biz' : 'util'); this.show({ tab: 'building', param: g.build }, true); } }
     else if (g.blvl) { this.openTab('build', 'biz'); }
+    else if (g.stat && g.stat[0] === 'mineTrips') this.travel('mine');
+    else if (g.depth) { if (G.depthOpen(g.depth[0]) || g.depth[0] === 0) this.travel('mine', () => this.world.focusDepth(g.depth[0])); else { this.openTab('build', 'mines'); } if (this.world.inMine()) { this.closeSheet(); this.world.focusDepth(g.depth[0]); } }
+    else if (g.anyDepth) this.openTab('build', 'mines');
     else if (g.stat && g.stat[0] === 'recruits') this.openTab('goblins', 'recruit');
     else if (g.assigned) this.openTab('goblins', 'roster');
-    else if (g.stat && g.stat[0] === 'bubbles') { this.closeSheet(); this.toast('Tap the floating coin bubbles above your buildings!', 'info', 'coin'); }
+    else if (g.stat && g.stat[0] === 'bubbles') { this.closeSheet(); this.toast('Coin bubbles float up in the Mines. Tap them!', 'info', 'coin'); this.travel('mine'); }
     else if (g.district) this.openTab('build', 'districts');
     else if (g.stat && (g.stat[0] === 'battlesWon')) this.openTab('explore');
     else if (g.stat && g.stat[0] === 'expSent') this.openTab('explore', 'exped');
@@ -1103,6 +1189,10 @@ export class UI {
     } else storyEl.hidden = true;
     // side buttons (updated in place so taps never land on a replaced element)
     const want = [];
+    const inMine = this.world.inMine();
+    const townAlert = G.rt.fires.length || G.rt.rats.length || G.rt.golden;
+    want.push(inMine ? { k: 'town', cls: townAlert ? 'alert' : '', act: 'travel', ic: 'house', t: townAlert ? 'Town (!)' : 'Town' }
+      : { k: 'mines', cls: G.rt.bubbles.length ? 'gold' : '', act: 'travel', ic: 'pick', t: G.rt.bubbles.length ? `Mines (${G.rt.bubbles.length}💰)` : 'Mines' });
     if (G.rt.invasion && !G.rt.invasion.fighting) want.push({ k: 'inv', cls: 'alert', act: 'defend-side', ic: 'castle', t: `Invaders! ${Math.ceil((G.rt.invasion.until - now) / 1000)}s` });
     if (G.rt.event) want.push({ k: 'ev', cls: 'event', act: 'event', ic: 'scroll', t: `Incident! ${Math.ceil((G.rt.event.until - now) / 1000)}s` });
     const ready = s.expeditions.filter(e => !e.claimed && now >= e.end).length;
@@ -1340,7 +1430,22 @@ UI.prototype.acts = {
     const out = this.G.resolveEvent(+el.dataset.i);
     if (out) { sfx('coin'); this.modal(`<h2>Outcome</h2><p>${esc(out)}</p><div class="modal-actions"><button class="btn" data-act="close-modal">Ha!</button></div>`); this.G.pushLog(out); }
   },
-  'goto-fire'() { const f = this.G.rt.fires[0]; if (f) { this.closeSheet(); this.world.focusBuilding(f.bid); } },
+  'goto-fire'() { const f = this.G.rt.fires[0]; if (f) this.travel('town', () => { this.closeSheet(); this.world.focusBuilding(f.bid); }); },
+  'travel'() { this.travel(); },
+  'open-depth'(el, e) { if (e.target.closest('button')) return; this.show({ tab: 'depth', param: +el.dataset.i }, true); },
+  'goto-depth'(el) { const i = +el.dataset.i; this.travel('mine', () => this.world.focusDepth(i)); if (this.world.inMine()) { this.closeSheet(); this.world.focusDepth(i); } },
+  'town-building'(el) { this.show({ tab: 'building', param: el.dataset.id }, true); },
+  'buy-depth'(el) {
+    const G = this.G, i = +el.dataset.i, n = +el.dataset.n || 1;
+    if (G.buyDepth(i, n)) { sfx('buy'); this.rerender(); }
+    else { sfx('error'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+  },
+  'dig'(el) {
+    const G = this.G, i = +el.dataset.i;
+    if (G.depthLock(i)) { sfx('error'); this.toast(G.depthLock(i), 'bad', 'pick'); return; }
+    if (G.s.gold < G.depthCost(i, 1)) { sfx('error'); this.toast('Not enough gold yet!', 'bad', 'coin'); return; }
+    if (G.buyDepth(i, 1)) { sfx('milestone'); this.travel('mine', () => this.world.onDepthOpen(i)); if (this.world.inMine()) { this.closeSheet(); this.world.onDepthOpen(i); } }
+  },
   'claim-login'() { const got = this.G.claimLogin(); if (got) { sfx('achieve'); this.toast('Login reward: ' + got.join(', '), 'good', 'gem'); this.rerender(); } },
   'claim-story'() {
     const got = this.G.claimStory();

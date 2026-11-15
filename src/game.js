@@ -4,7 +4,7 @@ import {
   xpForLevel, RANKS, NAME_A, NAME_B, NAME_C, SKINS, RARE_SKINS, OUTFITS, HATS, JOB_TOOL, NAMED, NAMED_BY_ID,
   REGIONS, REGION_BY_ID, STAGES_PER_REGION, MISSIONS, TREASURES, TREASURE_SETS, RESEARCH, RESEARCH_BY_ID,
   PERKS, PERK_BY_ID, PRESTIGE_MIN_GOLD, teethFor, ITEM_WEAPONS, ITEM_TRINKETS, ITEM_ADJ, ITEM_OF, FUNNY_EVENTS,
-  AMBIENT_EVENTS, DAILY_TEMPLATES, STORY, ACHIEVEMENTS, RIVAL_NAMES, LOGIN_REWARDS, ENEMIES,
+  AMBIENT_EVENTS, DAILY_TEMPLATES, STORY, DEPTHS, MINE_STAGES, ACHIEVEMENTS, RIVAL_NAMES, LOGIN_REWARDS, ENEMIES,
   MAP_W, MAP_H, ROADS, DECOR, DECOR_SIZE, HEAL_MS, MEDIC_NAMES, RECOVER_MS, TRACK_UNLOCKS, VENTURES, VENTURE_RISK,
 } from './data.js';
 import { rng, pick, ri, clamp, weighted, dayKey, weekKey, hashStr, fmt, shuffle } from './util.js';
@@ -36,7 +36,7 @@ export const G = {
       regions: {}, expeditions: [], perks: {},
       stats: { taps: 0, bubbles: 0, golden: 0, recruits: 0, battlesWon: 0, battlesLost: 0, bosses: 0, expeditions: 0, expSent: 0,
         fires: 0, rats: 0, invasionsWon: 0, invasionsLost: 0, events: 0, upgrades: 0, prestiges: 0, trains: 0, pokes: 0,
-        trades: 0, forges: 0, leagueWins: 0, playTime: 0, premiumPulls: 0 },
+        trades: 0, forges: 0, leagueWins: 0, playTime: 0, premiumPulls: 0, mineTrips: 0 },
       achievements: {},
       daily: { day: null, quests: [], streak: 0, lastLogin: null, loginClaimed: true, loginDay: 0 },
       story: 0, storyDone: false,
@@ -45,7 +45,7 @@ export const G = {
       timers: { golden: now + 90e3, event: now + 150e3, invasion: now + 600e3, disaster: now + 300e3, bubble: now + 5e3, ambient: now + 20e3 },
       merchant: null, pity: { basic: 0, premium: 0 },
       settings: { sound: true, music: true, haptics: true, track: 'mudlight' },
-      tut: {}, forgeCount: 0, invasionsSeen: 0, place: {}, firstMedic: false, medicsEarned: 0, mig2: true, tracks: { mudlight: true },
+      tut: {}, forgeCount: 0, invasionsSeen: 0, place: {}, firstMedic: false, medicsEarned: 0, mig2: true, mig3: true, mine: { lv: DEPTHS.map((d, i) => i === 0 ? 1 : 0) }, tracks: { mudlight: true },
     };
     for (const b of BUILDINGS) s.buildings[b.id] = { lvl: b.startBuilt ? 1 : 0, built: 0 };
     this.s = s;
@@ -73,7 +73,7 @@ export const G = {
   },
 
   migrate(s) {
-    const needsMig2 = !s.mig2;
+    const needsMig2 = !s.mig2, needsMig3 = !s.mig3;
     const fresh = this.newState();
     // deep-ish merge defaults for new fields
     for (const k in fresh) if (s[k] === undefined) s[k] = fresh[k];
@@ -81,12 +81,25 @@ export const G = {
     for (const k in fresh.timers) if (s.timers[k] === undefined) s.timers[k] = fresh.timers[k];
     for (const b of BUILDINGS) if (!s.buildings[b.id]) s.buildings[b.id] = { lvl: b.startBuilt ? 1 : 0, built: 0 };
     for (const k in fresh.settings) if (s.settings[k] === undefined) s.settings[k] = fresh.settings[k];
+    const preMines = STORY.filter(q => !q.mig);
     if (needsMig2) {
       // v2 update: a story quest (Build the Infirmary) was inserted at index 13
-      const idx = STORY.findIndex(q => q.goal.build === 'infirmary');
+      const idx = preMines.findIndex(q => q.goal.build === 'infirmary');
       if (s.story >= idx) s.story++;
       s.mig2 = true;
     }
+    if (needsMig3) {
+      // v3 update (the Deep Mines): gold now comes from mine depths. Each depth starts at the
+      // level its town business had, and story quests about the mines were added.
+      s.mine = { lv: BIZ.map(b => (s.buildings[b.id] && s.buildings[b.id].lvl) || 0) };
+      if (!s.mine.lv[0]) s.mine.lv[0] = 1;
+      const q = preMines[s.story];
+      s.story = q ? STORY.indexOf(q) : STORY.length;
+      s.mig3 = true;
+      s.minesNews = true;
+    }
+    if (!s.mine || !Array.isArray(s.mine.lv)) s.mine = { lv: fresh.mine.lv.slice() };
+    while (s.mine.lv.length < DEPTHS.length) s.mine.lv.push(0);
     if (!s.place) s.place = {};
     this.placeVer = (this.placeVer || 0) + 1;
     return s;
@@ -132,7 +145,8 @@ export const G = {
   gob(uid) { return this.s.goblins.find(g => g.uid === uid); },
   rarityIdx(r) { return RARITIES.findIndex(x => x.id === r); },
   bestRarity() { return this.s.goblins.reduce((m, g) => Math.max(m, this.rarityIdx(g.rarity)), -1); },
-  maxBuildingLvl() { return BIZ.reduce((m, b) => Math.max(m, this.s.buildings[b.id].lvl), 0); },
+  maxBuildingLvl() { return Math.max(this.maxDepthLvl(), BIZ.reduce((m, b) => Math.max(m, this.s.buildings[b.id].lvl), 0)); },
+  maxDepthLvl() { return this.s.mine.lv.reduce((m, l) => Math.max(m, l), 0); },
   rankName(l = this.s.level) { let n = RANKS[0][1]; for (const [lv, name] of RANKS) if (l >= lv) n = name; return n; },
   milestonesReached(lvl) { return MILESTONES.filter(m => lvl >= m).length; },
   nextMilestone(lvl) { return MILESTONES.find(m => lvl < m) || null; },
@@ -275,31 +289,81 @@ export const G = {
     return 1 + sum * (1 + this.researchSum('worker'));
   },
 
-  buildingBaseIncome(id) {
-    const d = this.def(id), b = this.s.buildings[id];
-    if (d.kind !== 'biz' || b.lvl <= 0) return 0;
-    let v = d.income * b.lvl * this.milestoneMult(b.lvl);
+  // ---- The Deep Mines. Gold is dug in mine depths; town business i powers depth i.
+  bizIdx(id) { return BIZ.findIndex(b => b.id === id); },
+  depthLvl(i) { return this.s.mine.lv[i] || 0; },
+  depthOpen(i) { return this.depthLvl(i) > 0; },
+  depthStage(i) { const l = this.depthLvl(i); return MINE_STAGES.filter(m => l >= m).length; },
+  nextStage(i) { const l = this.depthLvl(i); return MINE_STAGES.find(m => l < m) || null; },
+  digGate() { return 10; },
+  // why depth i cannot be dug yet (null = it can)
+  depthLock(i) {
+    if (i > 0 && this.depthLvl(i - 1) < this.digGate()) return `Get the ${DEPTHS[i - 1].name} to Lv ${this.digGate()}`;
+    if (this.s.level < BIZ[i].unlock) return `Reach Capital Level ${BIZ[i].unlock}`;
+    return null;
+  },
+  depthCost(i, n = 1, fromLvl) {
+    const d = BIZ[i], l = fromLvl !== undefined ? fromLvl : this.depthLvl(i), g = d.growth;
+    return d.baseCost * Math.pow(g, l) * (Math.pow(g, n) - 1) / (g - 1) * this.discount();
+  },
+  depthMaxAffordable(i) {
+    const d = BIZ[i], g = d.growth, c0 = d.baseCost * Math.pow(g, this.depthLvl(i)) * this.discount();
+    if (this.s.gold < c0) return 0;
+    return Math.max(1, Math.floor(Math.log(this.s.gold * (g - 1) / c0 + 1) / Math.log(g)));
+  },
+  buyDepth(i, n = 1) {
+    if (!DEPTHS[i]) return false;
+    const before = this.depthLvl(i);
+    if (before === 0 && this.depthLock(i)) return false;
+    if (n === 'max') n = this.depthMaxAffordable(i);
+    if (n <= 0) return false;
+    const c = this.depthCost(i, n);
+    if (!this.spend('gold', c)) return false;
+    this.s.mine.lv[i] = before + n;
+    this.s.stats.upgrades += n;
+    this.addXp(0.6 * n * Math.pow(c / n, 0.42));
+    const stB = MINE_STAGES.filter(m => before >= m).length, stA = this.depthStage(i);
+    if (before === 0) this.emit('depthOpen', i);
+    else this.emit('depthUp', i, n, stA > stB);
+    const msBefore = this.milestonesReached(before), msAfter = this.milestonesReached(before + n);
+    if (msAfter > msBefore) { this.emit('depthMilestone', i, before + n); this.addXp(this.xpFrac(0.05) * (msAfter - msBefore)); }
+    return true;
+  },
+  // how much a town business multiplies the gold of its mine depth
+  bizBoost(id) {
+    const b = this.s.buildings[id];
+    if (!b || b.lvl <= 0 || this.isConstructing(id)) return 1;
+    return 1 + 0.01 * b.lvl + 0.1 * this.milestonesReached(b.lvl);
+  },
+  depthBaseIncome(i) {
+    const d = BIZ[i], id = d.id, l = this.depthLvl(i);
+    if (l <= 0) return 0;
+    let v = d.income * l * this.milestoneMult(l);
     let rm = 1;
     for (const rid in this.s.research) { const r = RESEARCH_BY_ID[rid]; if (r && r.eff.b === id) rm *= r.eff.m; }
     v *= rm;
     v *= this.workerMult(id);
     v *= 1 + this.abilitySum('bmult', id);
     v *= this.buffMult('b:' + id);
+    v *= this.bizBoost(id);
     if (this.s.damaged[id]) v *= 0.5;
     return v;
   },
-  buildingIncome(id, withVariance = true) {
-    if (this.isConstructing(id)) return 0;
-    let v = this.buildingBaseIncome(id) * this.globalMult();
-    if (withVariance && this.def(id).variance) v *= this.rt.casinoMult;
+  depthIncome(i, withVariance = true) {
+    let v = this.depthBaseIncome(i) * this.globalMult();
+    if (withVariance && BIZ[i].variance) v *= this.rt.casinoMult;
     return v;
   },
+  // a business's gold = the gold of the depth it powers (keeps fires, repairs, bubbles working)
+  buildingBaseIncome(id) { const i = this.bizIdx(id); return i < 0 ? 0 : this.depthBaseIncome(i); },
+  buildingIncome(id, withVariance = true) { const i = this.bizIdx(id); return i < 0 ? 0 : this.depthIncome(i, withVariance); },
   incomePerSec(withFrenzy = true) {
     let t = 0;
-    for (const b of BIZ) t += this.buildingIncome(b.id, withFrenzy);
+    for (let i = 0; i < DEPTHS.length; i++) t += this.depthIncome(i, withFrenzy);
     if (withFrenzy && this.rt.frenzy > this.now()) t *= 7;
     return t;
   },
+  mineTrip() { this.s.stats.mineTrips++; this.emit('mineTrip'); },
   mushroomRate() {
     const b = this.s.buildings.shroom;
     if (b.lvl <= 0 || this.isConstructing('shroom')) return 0;
@@ -388,7 +452,7 @@ export const G = {
     b.lvl += n;
     this.s.stats.upgrades += n;
     const idx = BIZ.indexOf(d);
-    this.addXp(n * Math.pow(c / n, 0.42));
+    this.addXp(0.6 * n * Math.pow(c / n, 0.42));
     if (before === 0) { b.built = this.now() + 2500; this.emit('build', id); }
     else this.emit('upgrade', id, n);
     const msBefore = this.milestonesReached(before), msAfter = this.milestonesReached(b.lvl);
@@ -1062,7 +1126,7 @@ export const G = {
 
   // ------------------------------------------------------------- Special: bubbles, golden, events
   spawnBubble() {
-    const built = BIZ.filter(b => this.isBuilt(b.id) && !this.isConstructing(b.id));
+    const built = BIZ.filter((b, i) => this.depthOpen(i));
     if (!built.length || this.rt.bubbles.length >= 3) return;
     const b = pick(built);
     if (this.rt.bubbles.find(x => x.bid === b.id)) return;
@@ -1448,6 +1512,8 @@ export const G = {
     if (g.research) return Math.min(1, Object.keys(s.research).length / g.research);
     if (g.boss) return Math.min(1, this.regionStage(g.boss) / STAGES_PER_REGION);
     if (g.anyLvl) return Math.min(1, this.maxBuildingLvl() / g.anyLvl);
+    if (g.depth) return Math.min(1, this.depthLvl(g.depth[0]) / g.depth[1]);
+    if (g.anyDepth) return Math.min(1, this.maxDepthLvl() / g.anyDepth);
     if (g.runGold) return Math.min(1, s.runGold / g.runGold);
     if (g.rarity) return this.bestRarity() >= g.rarity ? 1 : 0;
     if (g.sets) return Math.min(1, this.completedSets() / g.sets);

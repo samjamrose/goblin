@@ -6,7 +6,7 @@ import { UI } from './ui.js';
 import { sfx, setSfx, setMusic, unlockAudio, setTownTrack, setMusicMode, TRACKS } from './audio.js';
 import { createCloud } from './cloud.js';
 import { createLeaderboard } from './leaderboard.js';
-import { BUILDING_BY_ID, TILE, TREASURES, REGION_BY_ID } from './data.js';
+import { BUILDING_BY_ID, TILE, TREASURES, REGION_BY_ID, DEPTHS, BIZ } from './data.js';
 import { fmt } from './util.js';
 import { goblinPortrait, icon } from './sprites.js';
 
@@ -29,6 +29,9 @@ async function boot() {
     onGoblin: () => { },
     onDistrict: (id) => { ui.openTab('build', 'districts'); },
     onBuilt: (id) => { sfx('built'); },
+    onDepth: (i) => { ui.openTab('build', 'mines'); ui.show({ tab: 'depth', param: i }, true); },
+    onDock: () => ui.travel(),
+    onScene: (scene) => { if (scene === 'mine') G.mineTrip(); ui.closeSheet(); },
   });
   const battle = new BattleScreen(document.getElementById('battle'), { sfx, haptic, music: setMusicMode });
   ui = new UI(G, world, battle);
@@ -52,14 +55,17 @@ async function boot() {
   G.on('toast', (t, k) => ui.toast(t, k));
   G.on('build', (id) => { world.onBuild(id); sfx('build'); });
   G.on('upgrade', (id, n) => world.onUpgrade(id, n));
-  G.on('milestone', (id, lvl) => { world.onMilestone(id, lvl); sfx('milestone'); ui.toast(`${BUILDING_BY_ID[id].name} reached Lv ${lvl}! Income ×2!`, 'good', 'star'); haptic(20); });
+  G.on('milestone', (id, lvl) => { world.onMilestone(id, lvl); sfx('milestone'); ui.toast(`${BUILDING_BY_ID[id].name} reached Lv ${lvl}! Bigger boost for the ${DEPTHS[G.bizIdx(id)]?.name || 'mines'}!`, 'good', 'star'); haptic(20); });
+  G.on('depthOpen', (i) => { sfx('milestone'); ui.toast(`⛏ You dug down to the ${DEPTHS[i].name}!`, 'ach', 'pick'); haptic(40); });
+  G.on('depthUp', (i, n, stage) => { world.onDepthUp(i, n, stage); if (stage) { sfx('built'); ui.toast(`⛏ The ${DEPTHS[i].name} expanded!`, 'good', 'pick'); } });
+  G.on('depthMilestone', (i, lvl) => { sfx('milestone'); ui.toast(`${DEPTHS[i].name} reached Lv ${lvl}! Gold ×2!`, 'good', 'star'); world.shake(0.2); haptic(20); });
   G.on('levelup', (lvl, gems) => { ui.showLevelUp(lvl, gems); haptic(40); });
   G.on('recruit', (g, info) => ui.showRecruit(g, info));
   G.on('achievement', a => { sfx('achieve'); ui.toast(`🏆 ${a.name} (+${a.gems} gems)`, 'ach', 'trophy'); });
   G.on('district', () => { world.terrainDirty = true; });
   G.on('pop', (b) => {
-    const d = G.pos(b.bid);
-    const [sx, sy] = world.toScreen((d.tx + d.w / 2) * TILE, d.ty * TILE - 16);
+    const [wx, wy] = world.bubblePos(b);
+    const [sx, sy] = world.toScreen(wx, wy);
     ui.flyCoins(sx, sy, 5);
   });
   G.on('golden', () => { ui.toast('✨ A Golden Goblin appeared! Catch it!', 'good', 'coin'); });
@@ -124,10 +130,17 @@ async function boot() {
       G.save();
       ui.closeModal();
       sfx('levelup');
-      ui.toast('Open Build (red dot) and build a Mushroom Patch!', 'info', 'shroom');
+      ui.toast('Gold is dug in the Mines! Tap ⛏ Mines (or the boat by the bridge).', 'info', 'pick');
     };
   } else {
     ui.showOffline(offline);
+    if (G.s.minesNews) {
+      ui.modal(`<h2>⛏ The Deep Mines are open!</h2>
+        <p>Big news, Boss: all gold is now <b>dug underground</b>. Cross the bridge and take the <b>boat by the dock</b> (or tap <b>⛏ Mines</b>).</p>
+        <p class="small">Your businesses now <b>power</b> the mine depth below them. Your old levels carried over, so every depth you had is already dug. Spend gold upgrading depths to dig faster, and dig deeper for new ones!</p>
+        <div class="modal-actions"><button class="btn gold" data-act="close-modal">Let's dig!</button></div>`);
+      delete G.s.minesNews; G.save();
+    }
   }
   // first shroom patch is free so the player can start immediately
   if (!G.isBuilt('shroom') && G.s.gold >= G.bizCost('shroom', 1) && isNew) { }

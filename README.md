@@ -19,8 +19,9 @@ Progress saves automatically to the browser (every 15 seconds and whenever you l
 
 | System | What it does |
 |---|---|
-| **Capital building** | 13 businesses (Mushroom Patch → Gold Mine → … → Goblin King's Palace) and 6 utility buildings. Each has 5 visual tiers that change as it levels. |
-| **Economy** | Gold, mushrooms, ore and gems. Milestone levels (25, 50, 100, 200…) double income. Coin bubbles pop above buildings for tap bonuses. |
+| **The Deep Mines** | All gold is dug underground. Cross the bridge and take the boat from the dock to reach them. 13 depths (Muddy Dig → Copper Vein → … → Core of the World), each upgraded with gold. Every depth gets longer and adds new machinery at Lv 1, 5, 10, 25, 50, 75, 100, 150, 200 and 300, and reaching Lv 10 lets you dig to the next depth. |
+| **Capital building** | 13 businesses (Mushroom Patch → Ore Smelter → … → Goblin King's Palace) that each power the mine depth below them, plus 7 utility buildings. Each has 5 visual tiers that change as it levels. |
+| **Economy** | Gold, mushrooms, ore and gems. Milestone levels (25, 50, 100, 200…) double a depth's gold. Coin bubbles float up in the mines for tap bonuses. |
 | **Territory** | 5 districts to unlock: Muck Camp, Market Ward, Shady Alley, Hoard Hill and Dragonview Heights. |
 | **Goblin recruitment** | Summoning Cauldron with mushroom and gem recruits, five rarities (Common → Mythical), pity timers, and 23 hand-designed named heroes with unique abilities. Duplicates add stars. |
 | **Jobs** | 11 professions. Assign goblins to buildings (a matching job gives the full bonus), to defense, or to expeditions. Goblins walk to work and visibly do their jobs. |
@@ -33,7 +34,7 @@ Progress saves automatically to the browser (every 15 seconds and whenever you l
 | **Disasters & events** | Fires (tap to extinguish), rat swarms (tap to squash), golden goblins (catch for frenzies), 18 choice-based funny incidents, and ambient goblin drama with arguments and chatter. |
 | **Collections** | Goblin Codex, 28 treasures in 7 sets with set bonuses, and gear in weapon and trinket slots. |
 | **Trading** | Gribble the Wandering Trader (rotating stock), the Bazaar exchange, and gem time-warps. |
-| **Progression** | Capital levels and ranks, 33 story quests, 3 daily quests per day plus a bonus, a 7-day login streak, and 46 achievements (each one gives +1% income). |
+| **Progression** | Capital levels and ranks, 43 story quests, 3 daily quests per day plus a bonus, a 7-day login streak, and 46 achievements (each one gives +1% income). |
 | **Golden Teeth** | Earned automatically from all the gold you make, with no restarting. Each tooth gives +2% income forever, and the Tooth Shrine sells permanent perks. |
 | **Goblin Venture Bank** | Invest real gold in silly goblin startup ideas. Each has hidden odds: it pays a multiple or the money is lost. |
 | **Hoard Hill** | The Great Hoard landmark grows with your wealth, and treasure dig sites pop up for you to dig. |
@@ -48,6 +49,7 @@ src/
   game.js       all game rules and state, DOM-free and testable in Node
   battlesim.js  battle simulation
   world.js      map rendering, camera, input, goblin agents, effects
+  mines.js      the underground mine scene and the boat ride
   battle.js     battle screen
   ui.js         HUD, panels, modals
   sprites.js    procedural pixel art
