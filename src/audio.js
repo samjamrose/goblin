@@ -80,6 +80,17 @@ const SFX = {
   fire: () => noise(0.4, 0.12, 0, 300),
 };
 
+// a hiccup: a gulpy upward chirp with a tiny pop (big = a small explosion; musical = sung on pitch)
+export function hic(freq = 600, big = false, musical = false) {
+  if (!sfxOn || !ac) return;
+  try {
+    if (musical) { tone(freq, 0.12, 'square', 0.11, freq * 0.35); tone(freq * 2, 0.05, 'triangle', 0.05, 0, 0.01); noise(0.03, 0.08, 0, 2500); return; }
+    tone(freq * 0.7, 0.09, 'square', 0.1, freq * 0.9);
+    noise(big ? 0.35 : 0.06, big ? 0.32 : 0.14, 0.05, big ? 120 : 1800);
+    if (big) tone(80, 0.3, 'sawtooth', 0.14, -40, 0.05);
+  } catch (e) { /* ignore */ }
+}
+
 export function sfx(name) {
   if (!sfxOn || !ac) return;
   const now = performance.now();

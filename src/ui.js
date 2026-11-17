@@ -433,6 +433,8 @@ export class UI {
   djHtml() {
     const G = this.G, s = G.s, cur = s.settings.track || 'mudlight';
     let h = `<div class="card row" style="background:linear-gradient(#3a2a6a,#1c1424)"><img src="${goblinPortrait({ skin: '#7dcc52', hat: 'headphones', outfit: '#3a2a6a', tool: 'dice', ears: 2, nose: 1, eyes: 0, teeth: 2, extra: 'glasses' }, 2)}" style="width:52px"><div class="grow small"><b>DJ Wubgob</b><br><i>"Yo yo yo! Pick a track, boss. I only play bangers. And one sad song."</i></div></div>`;
+    h += `<div class="card" style="background:linear-gradient(#5a2a6a,#2a1a3a)"><div class="row"><div class="grow"><b>🎤 Hiccup Concert</b><div class="small">The whole tribe drinks fizzy grog and hiccups a song on the beat. Tiny explosions! Afterwards: <b class="gold-t">gold ×2 for 2 minutes</b>.</div></div>
+      <button class="btn gold" data-act="concert" ${this.b(el => { const cd = G.concertCooldown(); el.classList.toggle('no', !G.canConcert()); el.innerHTML = G.rt.concert ? 'Playing!' : cd > 0 ? `Rest ${fmtTime(cd / 1000)}` : G.s.goblins.length < 3 ? 'Need 3 goblins' : 'Start!'; })}></button></div></div>`;
     if (!s.settings.music) h += `<div class="card paper small center">Music is off. <button class="btn tiny" data-act="toggle" data-k="music">Turn music on</button></div>`;
     h += `<h3>Town Tracks (${Object.keys(s.tracks || {}).length}/7)</h3>`;
     TRACK_UNLOCKS.forEach((u, i) => {
@@ -1432,6 +1434,11 @@ UI.prototype.acts = {
   },
   'goto-fire'() { const f = this.G.rt.fires[0]; if (f) this.travel('town', () => { this.closeSheet(); this.world.focusBuilding(f.bid); }); },
   'travel'() { this.travel(); },
+  'concert'() {
+    const G = this.G;
+    if (!G.canConcert()) { sfx('error'); return; }
+    this.travel('town', () => { if (G.startConcert()) { this.closeSheet(); this.toast('🎤 HICCUP CONCERT! Everyone to the DJ stand!', 'ach', 'music'); } });
+  },
   'open-depth'(el, e) { if (e.target.closest('button')) return; this.show({ tab: 'depth', param: +el.dataset.i }, true); },
   'goto-depth'(el) { const i = +el.dataset.i; this.travel('mine', () => this.world.focusDepth(i)); if (this.world.inMine()) { this.closeSheet(); this.world.focusDepth(i); } },
   'town-building'(el) { this.show({ tab: 'building', param: el.dataset.id }, true); },

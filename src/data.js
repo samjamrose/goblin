@@ -772,6 +772,8 @@ export const STORY = [
 
 // ----------------------------------------------------------------- Achievements
 export const ACHIEVEMENTS = [
+  { id: 'hicboo', name: 'Boo-tiful', desc: 'Scare away 10 cases of the hiccups', check: s => (s.stats.hiccupsCured || 0) >= 10, gems: 15 },
+  { id: 'hicband', name: 'Hic-cellent Show', desc: 'Throw a Hiccup Concert', check: s => (s.stats.concerts || 0) >= 1, gems: 15 },
   { id: 'gold1k', name: 'Pocket Change', desc: 'Earn 1K gold total', check: s => s.lifetimeGold >= 1e3, gems: 5 },
   { id: 'gold1m', name: 'Millionaire Goblin', desc: 'Earn 1M gold total', check: s => s.lifetimeGold >= 1e6, gems: 10 },
   { id: 'gold1b', name: 'Billion Bottoms', desc: 'Earn 1B gold total', check: s => s.lifetimeGold >= 1e9, gems: 20 },

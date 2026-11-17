@@ -107,6 +107,13 @@ async function boot() {
   G.on('medicGems', (n) => ui.toast(`Your infirmary is fully staffed: a medic reward became ${n} gems!`, 'good', 'gem'));
   G.on('healed', (g) => { if (!battle.active) ui.toast(`${g.name} is healed and back to work!`, 'good', 'heart'); });
   G.on('placed', () => { world.terrainDirty = true; });
+  G.on('hiccups', () => {
+    if (world.inMine() || battle.active) return;
+    const uid = world.startHiccups();
+    const g = uid && G.gob(uid);
+    if (g && G.s.tut.intro) ui.toast(`*HIC!* ${g.name} has the hiccups and keeps exploding! Tap them to scare it away.`, 'info', 'goblin');
+  });
+  G.on('concertEnd', () => { sfx('victory'); ui.toast('🎤 The crowd went wild! Gold ×2 for 2 minutes!', 'ach', 'music'); });
 
   // ---------------- first launch intro / offline
   G.slowTick();

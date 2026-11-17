@@ -39,6 +39,7 @@ Progress saves automatically to the browser (every 15 seconds and whenever you l
 | **Goblin Venture Bank** | Invest real gold in silly goblin startup ideas. Each has hidden odds: it pays a multiple or the money is lost. |
 | **Hoard Hill** | The Great Hoard landmark grows with your wealth, and treasure dig sites pop up for you to dig. |
 | **Competition** | A weekly Tribal League against rival goblin chiefs with gem rewards, plus a shareable brag card image. |
+| **Hiccups** | Goblins catch the hiccups, and every HIC! is a tiny explosion that scares nearby goblins into running. Tap a hiccuping goblin to say BOO and cure it. At the DJ Stand, throw a **Hiccup Concert**: the tribe hiccups a song on the beat with fireworks, then gold ×2 for 2 minutes. |
 | **Feel** | Day/night cycle, particles, screen shake, a procedural chiptune soundtrack, haptics, offline earnings and a "welcome back" summary. |
 
 ## Development

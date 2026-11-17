@@ -36,13 +36,13 @@ export const G = {
       regions: {}, expeditions: [], perks: {},
       stats: { taps: 0, bubbles: 0, golden: 0, recruits: 0, battlesWon: 0, battlesLost: 0, bosses: 0, expeditions: 0, expSent: 0,
         fires: 0, rats: 0, invasionsWon: 0, invasionsLost: 0, events: 0, upgrades: 0, prestiges: 0, trains: 0, pokes: 0,
-        trades: 0, forges: 0, leagueWins: 0, playTime: 0, premiumPulls: 0, mineTrips: 0 },
+        trades: 0, forges: 0, leagueWins: 0, playTime: 0, premiumPulls: 0, mineTrips: 0, hiccupsCured: 0, concerts: 0 },
       achievements: {},
       daily: { day: null, quests: [], streak: 0, lastLogin: null, loginClaimed: true, loginDay: 0 },
       story: 0, storyDone: false,
       league: null, leaguePending: null,
       buffs: [], damaged: {},
-      timers: { golden: now + 90e3, event: now + 150e3, invasion: now + 600e3, disaster: now + 300e3, bubble: now + 5e3, ambient: now + 20e3 },
+      timers: { golden: now + 90e3, event: now + 150e3, invasion: now + 600e3, disaster: now + 300e3, bubble: now + 5e3, ambient: now + 20e3, hiccup: now + 45e3, concert: 0 },
       merchant: null, pity: { basic: 0, premium: 0 },
       settings: { sound: true, music: true, haptics: true, track: 'mudlight' },
       tut: {}, forgeCount: 0, invasionsSeen: 0, place: {}, firstMedic: false, medicsEarned: 0, mig2: true, mig3: true, mine: { lv: DEPTHS.map((d, i) => i === 0 ? 1 : 0) }, tracks: { mudlight: true },
@@ -362,6 +362,24 @@ export const G = {
     for (let i = 0; i < DEPTHS.length; i++) t += this.depthIncome(i, withFrenzy);
     if (withFrenzy && this.rt.frenzy > this.now()) t *= 7;
     return t;
+  },
+  // ---- hiccups & the Hiccup Concert
+  cureHiccups() {
+    this.s.stats.hiccupsCured++;
+    const v = Math.max(5, this.incomePerSec(false) * 8);
+    this.addGold(v);
+    return v;
+  },
+  concertCooldown() { return Math.max(0, (this.s.timers.concert || 0) - this.now()); },
+  canConcert() { return this.isBuilt('dj') && !this.rt.concert && this.concertCooldown() <= 0 && this.s.goblins.length >= 3; },
+  startConcert() {
+    if (!this.canConcert()) return false;
+    const now = this.now();
+    this.rt.concert = { start: now, end: now + 30000 };
+    this.s.timers.concert = now + 8 * 60000;
+    this.s.stats.concerts++;
+    this.emit('concert');
+    return true;
   },
   mineTrip() { this.s.stats.mineTrips++; this.emit('mineTrip'); },
   mushroomRate() {
@@ -1640,6 +1658,15 @@ export const G = {
     }
     if (this.rt.event && now > this.rt.event.until) { this.rt.event = null; this.emit('eventExpired'); }
 
+    if (now > T.hiccup) {
+      T.hiccup = now + (70 + Math.random() * 80) * 1000;
+      if (!this.rt.concert) this.emit('hiccups');
+    }
+    if (this.rt.concert && now > this.rt.concert.end) {
+      this.rt.concert = null;
+      this.buff('gold', 2, 120);
+      this.emit('concertEnd');
+    }
     if (now > T.ambient) {
       T.ambient = now + (14 + Math.random() * 20) * 1000;
       this.ambient();

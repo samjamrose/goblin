@@ -3,6 +3,7 @@ import { TILE, MAP_W, MAP_H, BUILDINGS, BUILDING_BY_ID, DISTRICTS, DECOR, DECOR_
 import { goblinSheet, GOB_W, GOB_H, buildingSprite, scaffoldSprite, plotSprite, B_EXTRA, makeCanvas, iconCanvas, shade, enemySprite } from './sprites.js';
 import { rng, pick, clamp, fmt, hashStr } from './util.js';
 import { MineMixin, MW, depthY } from './mines.js';
+import { HiccupMixin } from './hiccups.js';
 
 const WW = MAP_W * TILE, WH = MAP_H * TILE;
 const FONT = '"Pixelify Sans", "Trebuchet MS", sans-serif';
@@ -30,6 +31,7 @@ export class World {
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.dayLen = 480;
     this.mineInit();
+    this.hicInit();
     this.buildGrid();
     this.resize();
     this.bindInput();
@@ -498,6 +500,7 @@ export class World {
       const d = Math.hypot(wx - a.x, wy - (a.y - 10));
       if (d < Math.max(10, hitR) && d < bd) { bd = d; best = a; }
     }
+    if (best && this.tapHiccup(best)) return;
     if (best) {
       best.jump = 0.35;
       this.say(best, this.lineFor(best), 2.5);
@@ -587,10 +590,11 @@ export class World {
         const gx = tx * TILE + 8, gy = ty * TILE + 12;
         const dx = gx - a.x, dy = gy - a.y, d = Math.hypot(dx, dy);
         const sp = a.speed * (g.assign?.t === 'b' ? 1.2 : 1) * (a.run ? 2 : 1) * (g.assign?.t === 'med' ? 0.45 : 1);
-        if (d < sp * dt + 0.5) { a.x = gx; a.y = gy; a.path.shift(); if (!a.path.length) { a.path = null; a.state = a.goal || 'idle'; a.timer = a.state === 'work' ? 6 + Math.random() * 10 : 1.5 + Math.random() * 4; a.run = false; } }
+        if (d < sp * dt + 0.5) { a.x = gx; a.y = gy; a.path.shift(); if (!a.path.length) { a.path = null; a.state = a.goal === 'concert' && !this.concert ? 'idle' : a.goal || 'idle'; a.timer = a.state === 'work' ? 6 + Math.random() * 10 : 1.5 + Math.random() * 4; a.run = false; } }
         else { a.x += dx / d * sp * dt; a.y += dy / d * sp * dt; if (Math.abs(dx) > 0.3) a.dir = dx > 0 ? 1 : -1; }
         continue;
       }
+      if (a.state === 'concert') continue;
       a.timer -= dt;
       if (a.state === 'argue') { if (a.timer <= 0) { a.state = 'idle'; a.timer = 1; } continue; }
       if (a.timer > 0) continue;
@@ -724,6 +728,9 @@ export class World {
     this.updateDigs(dt);
     this.syncAgents();
     this.updateAgents(dt);
+    this.updateHiccups(dt);
+    if (G.rt.concert && !this.concert) this.startConcertVis();
+    this.updateConcert(dt);
     for (const k in this.bounce) { this.bounce[k] -= dt; if (this.bounce[k] <= 0) delete this.bounce[k]; }
     for (const k in this.flash) { this.flash[k] -= dt; if (this.flash[k] <= 0) delete this.flash[k]; }
     this.bubbleTalk = this.bubbleTalk.filter(b => (b.t -= dt) > 0);
@@ -1129,8 +1136,14 @@ export class World {
     if (a.state === 'walk') f = 2 + Math.floor(a.anim * 8) % 4;
     else if (a.state === 'work') f = Math.floor(a.anim * 3.2) % 2 ? 6 : 7;
     else if (a.state === 'argue') f = Math.floor(a.anim * 6) % 2 ? 8 : 0;
+    else if (a.state === 'concert') f = this.concert && Math.floor(this.concert.t / 0.42) % 2 ? 8 : 0;
     else f = (a.anim % 4) < 0.15 ? 1 : 0;
-    const jy = a.jump > 0 ? -Math.sin(a.jump / 0.35 * Math.PI) * 6 : 0;
+    const jy = (a.jump > 0 ? -Math.sin(a.jump / 0.35 * Math.PI) * 6 : 0) + this.concertBob(a);
+    if (this.hasHiccups(a.uid)) {
+      // little fizzy bubbles and a wobble while hiccuping
+      ctx.fillStyle = 'rgba(255,170,190,0.8)'; ctx.fillRect(Math.round(a.x - 3), Math.round(a.y - 9 + jy), 2, 1); ctx.fillRect(Math.round(a.x + 2), Math.round(a.y - 9 + jy), 2, 1);
+      if (Math.random() < 0.06) this.particles.push({ type: 'spark', x: a.x + (Math.random() - 0.5) * 6, y: a.y - 20, vx: 0, vy: -10, t: 0, life: 0.9, color: '#c8f0ff' });
+    }
     const x = Math.round(a.x - GOB_W / 2), y = Math.round(a.y - GOB_H + 2 + jy);
     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round(a.x - 5), Math.round(a.y), 10, 2);
     const ri = this.G.rarityIdx(g.rarity);
@@ -1176,8 +1189,8 @@ export class World {
     const ctx = this.ctx, G = this.G;
     const look = { skin: '#7dcc52', hat: 'headphones', outfit: '#3a2a6a', tool: 'dice', ears: 2, nose: 1, eyes: 0, teeth: 2, extra: 'glasses' };
     const sh = goblinSheet(look);
-    const playing = G.s.settings.music;
-    const beat = playing ? this.time * 2.2 : this.time * 0.5;
+    const playing = G.s.settings.music || !!this.concert;
+    const beat = this.concert ? this.concert.t / 0.42 : playing ? this.time * 2.2 : this.time * 0.5;
     const bob = Math.round(Math.abs(Math.sin(beat * Math.PI)) * -2);
     const f = playing && Math.floor(beat) % 4 === 3 ? 8 : (Math.floor(this.time * 0.7) % 5 === 0 ? 1 : 0);
     ctx.save();
@@ -1347,4 +1360,4 @@ function fitText(ctx, t, w) {
   return t + '…';
 }
 
-Object.assign(World.prototype, MineMixin);
+Object.assign(World.prototype, MineMixin, HiccupMixin);
